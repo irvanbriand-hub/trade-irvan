@@ -374,7 +374,7 @@ GEMINI_API_KEY=<Google Gemini API key dari aistudio.google.com>
 
 ### URLs Production
 - **GitHub Repo:** https://github.com/irvanbriand-hub/trade-irvan.git
-- **Frontend (Vercel):** *(isi setelah deploy pertama)*
+- **Frontend (Vercel):** https://tradeirvan.vercel.app
 - **Supabase Project:** https://supabase.com/dashboard/project/lrvuysoxaauyfqgcctxi
 - **Supabase URL:** https://lrvuysoxaauyfqgcctxi.supabase.co
 
