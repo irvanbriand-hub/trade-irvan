@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   BarChart3, Menu, X, LogOut, ChevronDown, ChevronRight,
-  Search, Zap, Landmark, LineChart, BookOpen,
+  Search, Zap, Landmark, LineChart, BookOpen, Sun, Moon,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 
@@ -260,6 +261,7 @@ function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const { theme, setTheme } = useTheme();
   const location = useLocation();
 
   return (
@@ -303,6 +305,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="h-2 w-2 rounded-full bg-gain animate-pulse-glow" />
               <span>Market Open</span>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden lg:flex h-8 w-8 relative"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              title="Toggle theme"
+            >
+              <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
