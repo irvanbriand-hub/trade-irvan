@@ -12,10 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Environment files (berisi credentials — JANGAN di-commit)
+.env
+.env.new
+.env.*.local
+
 # Export & import data (jangan di-commit — berisi data user)
 exports/
 errors.log
-.env.new
 trading-app-backup-*.json
 
 # Editor directories and files
