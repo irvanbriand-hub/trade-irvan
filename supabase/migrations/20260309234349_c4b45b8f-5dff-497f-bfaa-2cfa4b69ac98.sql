@@ -1,0 +1,1 @@
+ALTER TABLE public.wr_scanner RENAME COLUMN open_price TO close_import;

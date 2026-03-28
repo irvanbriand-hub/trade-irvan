@@ -1,0 +1,1 @@
+ALTER TABLE bandarmology_data ADD COLUMN IF NOT EXISTS is_topl boolean DEFAULT false;

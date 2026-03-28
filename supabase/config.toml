@@ -1,0 +1,40 @@
+project_id = "lrvuysoxaauyfqgcctxi"
+
+[functions.yahoo-finance]
+verify_jwt = false
+
+[functions.yahoo-finance-history]
+verify_jwt = false
+
+[functions.yahoo-finance-fundamental]
+verify_jwt = false
+
+[functions.yahoo-finance-screener]
+verify_jwt = false
+
+[functions.yahoo-finance-backtest]
+verify_jwt = false
+
+[functions.yahoo-finance-financial-report]
+verify_jwt = false
+
+[functions.yahoo-finance-ohlcv]
+verify_jwt = false
+
+[functions.yahoo-finance-sk-screener]
+verify_jwt = false
+
+[functions.yahoo-finance-sk-analysis]
+verify_jwt = false
+
+[functions.yahoo-finance-swing-screener]
+verify_jwt = false
+
+[functions.yahoo-finance-swing-analysis]
+verify_jwt = false
+
+[functions.gemini-insight]
+verify_jwt = false
+
+[functions.yahoo-finance-jendral]
+verify_jwt = false
