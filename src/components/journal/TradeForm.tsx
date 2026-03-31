@@ -95,9 +95,6 @@ export function TradeForm() {
         lots: lotsNum,
         category_id: categoryId || null,
         notes: notes || null,
-        fee: Math.round(fee),
-        total_value: Math.round(totalValue),
-        total_amount: Math.round(totalAmount),
       },
       {
         onSuccess: () => {
