@@ -37,6 +37,7 @@ export interface PositionResult {
 interface PositionLayer {
   lots: number;
   price: number;
+  fee: number; // buy fee; reduced proportionally as lots are consumed
 }
 
 export function calculatePositions(trades: any[]): PositionResult {
@@ -70,6 +71,7 @@ export function calculatePositions(trades: any[]): PositionResult {
       layers.push({
         lots: Number(t.lots) || 0,
         price: Number(t.price) || 0,
+        fee: Number(t.fee) || 0,
       });
       continue;
     }
@@ -81,7 +83,12 @@ export function calculatePositions(trades: any[]): PositionResult {
       const latestLayer = layers[layers.length - 1];
       const matchedLots = Math.min(remainingLots, latestLayer.lots);
 
-      costBasis += matchedLots * 100 * latestLayer.price;
+      const proportionalFee = latestLayer.lots > 0
+        ? (matchedLots / latestLayer.lots) * latestLayer.fee
+        : 0;
+
+      costBasis += matchedLots * 100 * latestLayer.price + proportionalFee;
+      latestLayer.fee -= proportionalFee;
       latestLayer.lots -= matchedLots;
       remainingLots -= matchedLots;
 
@@ -107,7 +114,7 @@ export function calculatePositions(trades: any[]): PositionResult {
   const openPositions: OpenPosition[] = Object.entries(layersByTicker)
     .map(([ticker, layers]) => {
       const totalLots = layers.reduce((sum, layer) => sum + layer.lots, 0);
-      const totalBuyCost = layers.reduce((sum, layer) => sum + layer.lots * 100 * layer.price, 0);
+      const totalBuyCost = layers.reduce((sum, layer) => sum + layer.lots * 100 * layer.price + layer.fee, 0);
       const avgBuyPrice = totalLots > 0 ? totalBuyCost / (totalLots * 100) : 0;
 
       return {

@@ -17,7 +17,7 @@ import {
 import { Loader2, Upload, RotateCcw, TrendingUp, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
-import { useAkTracker, parseAkBrokerInput } from "@/hooks/useAkTracker";
+import { useAkTracker, parseAkBrokerInput, type CombinedDateRow } from "@/hooks/useAkTracker";
 import { useBrokerProfiles } from "@/hooks/useBrokerProfiles";
 import { useBandarmology } from "@/hooks/useBandarmology";
 import { useAuth } from "@/hooks/useAuth";
@@ -25,7 +25,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer, ReferenceLine,
-  ComposedChart,
+  ComposedChart, Cell,
 } from "recharts";
 import BrokerSetup from "./BrokerSetup";
 import SmartMoneyRanking from "./SmartMoneyRanking";
@@ -64,6 +64,16 @@ const tagVsAkBadge = (tag: string) => {
   }
 };
 
+function patternBadge(pattern: string) {
+  switch (pattern) {
+    case "HYPERACCUM":   return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[8px]">🚀 Hyperaccum</Badge>;
+    case "ACCELERATION": return <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[8px]">⚡ Accel</Badge>;
+    case "REVERSAL":     return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[8px]">🔄 Reversal</Badge>;
+    case "DIVERGENCE":   return <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30 text-[8px]">🔀 Diverge</Badge>;
+    default:             return null;
+  }
+}
+
 function scoreColor(score: number) {
   if (score >= 80) return "text-yellow-400";
   if (score >= 70) return "text-green-400";
@@ -88,7 +98,7 @@ export default function AkTracker() {
   const {
     brokerData, allBrokerData, scores, allScores, isLoading, saveData, deleteByDate,
     calculateScores, getExistingDates, getDataForDate, getScoresForDate,
-    getTickerHistory, getTickerScoreHistory,
+    getTickerHistory, getTickerScoreHistory, getCombinedHistory,
   } = useAkTracker(selectedBrokerFilter === "all" ? undefined : selectedBrokerFilter);
   const { items: bandarItems, getLatestForDate } = useBandarmology();
 
@@ -185,6 +195,19 @@ export default function AkTracker() {
       .sort((a, b) => (b.score?.score_total ?? 0) - (a.score?.score_total ?? 0));
   }, [mergedData]);
 
+  // Pattern gabungan per ticker (untuk badge di main list)
+  const combinedPatternMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const uniqueTickers = [...new Set(allBrokerData.map(d => d.ticker))];
+    for (const ticker of uniqueTickers) {
+      const combined = getCombinedHistory(ticker);
+      if (combined.length > 0) {
+        map.set(ticker, combined[combined.length - 1].pattern);
+      }
+    }
+    return map;
+  }, [allBrokerData, getCombinedHistory]);
+
   const handleParse = () => {
     if (!inputText.trim()) {
       toast({ title: "Data kosong", variant: "destructive" });
@@ -246,6 +269,16 @@ export default function AkTracker() {
     const bc = selectedBrokerFilter === "all" ? undefined : selectedBrokerFilter;
     return getTickerScoreHistory(expandedTicker, bc);
   }, [expandedTicker, getTickerScoreHistory, selectedBrokerFilter]);
+
+  const tickerAllBrokerHistory = useMemo(() => {
+    if (!expandedTicker) return [];
+    return allBrokerData.filter(d => d.ticker === expandedTicker);
+  }, [expandedTicker, allBrokerData]);
+
+  const tickerCombinedHistory = useMemo(() => {
+    if (!expandedTicker) return [] as CombinedDateRow[];
+    return getCombinedHistory(expandedTicker);
+  }, [expandedTicker, getCombinedHistory]);
 
   const currentBroker = activeBrokers.find(b => b.broker_code === (selectedBrokerFilter === "all" ? "AK" : selectedBrokerFilter));
   const brokerColor = currentBroker?.color || "#00D4FF";
@@ -548,6 +581,7 @@ export default function AkTracker() {
                         <TableHead className="text-[10px] text-center">Score</TableHead>
                         <TableHead className="text-[10px] text-right">Buy Avg</TableHead>
                         <TableHead className="text-[10px] text-center">Bandar</TableHead>
+                        <TableHead className="text-[10px] text-center">Pattern</TableHead>
                         <TableHead className="text-[10px]">Aksi</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -605,14 +639,17 @@ export default function AkTracker() {
                                   </Tooltip>
                                 ) : "—"}
                               </TableCell>
+                              <TableCell className="text-center">
+                                {patternBadge(combinedPatternMap.get(r.ticker) ?? "NORMAL")}
+                              </TableCell>
                               <TableCell>
                                 <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={e => { e.stopPropagation(); setExpandedTicker(expandedTicker === r.ticker ? null : r.ticker); }}>📈</Button>
                               </TableCell>
                             </TableRow>
                             {expandedTicker === r.ticker && (
                               <TableRow key={`${r.id}-expand`}>
-                                <TableCell colSpan={selectedBrokerFilter === "all" ? 14 : 13} className="p-0">
-                                  <TickerDetail ticker={r.ticker} history={tickerHistoryData} scoreHistory={tickerScoreData} bandarItems={bandarItems} brokerColor={brokerColor} />
+                                <TableCell colSpan={selectedBrokerFilter === "all" ? 15 : 14} className="p-0">
+                                  <TickerDetail ticker={r.ticker} history={tickerHistoryData} scoreHistory={tickerScoreData} bandarItems={bandarItems} brokerColor={brokerColor} allBrokerHistory={tickerAllBrokerHistory} combinedHistory={tickerCombinedHistory} activeBrokers={activeBrokers} />
                                 </TableCell>
                               </TableRow>
                             )}
@@ -631,6 +668,8 @@ export default function AkTracker() {
     </>
   );
 }
+
+const BROKER_LINE_COLORS = ["#3B82F6", "#F59E0B", "#A855F7", "#F97316", "#EF4444", "#10B981"];
 
 function OverlayTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -654,15 +693,23 @@ function OverlayTooltip({ active, payload, label }: any) {
   );
 }
 
-function TickerDetail({ ticker, history, scoreHistory, bandarItems, brokerColor }: {
+function TickerDetail({ ticker, history, scoreHistory, bandarItems, brokerColor, allBrokerHistory, combinedHistory, activeBrokers }: {
   ticker: string;
   history: any[];
   scoreHistory: any[];
   bandarItems: any[];
   brokerColor: string;
+  allBrokerHistory: any[];
+  combinedHistory: CombinedDateRow[];
+  activeBrokers: any[];
 }) {
   const [priceData, setPriceData] = useState<Record<string, number>>({});
   const [loadingPrice, setLoadingPrice] = useState(false);
+  const [viewMode, setViewMode] = useState<"gabungan" | "perbroker">("gabungan");
+  const [periodFilter, setPeriodFilter] = useState<"5H" | "10H" | "20H" | "custom" | null>(null);
+  const [customFrom, setCustomFrom] = useState<string>("");
+  const [customTo, setCustomTo] = useState<string>("");
+  const [activeLines, setActiveLines] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (history.length === 0) return;
@@ -690,7 +737,27 @@ function TickerDetail({ ticker, history, scoreHistory, bandarItems, brokerColor 
     return <div className="p-4 text-xs text-muted-foreground">Belum ada riwayat untuk {ticker}</div>;
   }
 
-  const chartData = history.map((h: any) => ({
+  // Period filter helper — applied to chart + table only, not to stats
+  const applyPeriodFilter = <T extends { tanggal: string }>(data: T[]): T[] => {
+    if (!periodFilter) return data;
+    if (periodFilter === "custom") {
+      if (!customFrom && !customTo) return data;
+      return data.filter(r =>
+        (!customFrom || r.tanggal >= customFrom) &&
+        (!customTo || r.tanggal <= customTo)
+      );
+    }
+    const n = periodFilter === "5H" ? 5 : periodFilter === "10H" ? 10 : 20;
+    const uniqueDates = [...new Set(data.map(r => r.tanggal))].sort();
+    if (uniqueDates.length <= n) return data;
+    const cutoff = uniqueDates[uniqueDates.length - n];
+    return data.filter(r => r.tanggal >= cutoff);
+  };
+
+  const filteredHistory = applyPeriodFilter(history);
+  const filteredCombinedRows = [...applyPeriodFilter(combinedHistory)].reverse();
+
+  const chartData = filteredHistory.map((h: any) => ({
     date: h.tanggal.slice(5),
     buy: (h.buy_value ?? 0) / 1e9,
     sell: -((h.sell_value ?? 0) / 1e9),
@@ -698,7 +765,7 @@ function TickerDetail({ ticker, history, scoreHistory, bandarItems, brokerColor 
   }));
 
   let cumNet = 0;
-  const overlayData = history.map((h: any) => {
+  const filteredOverlayData = filteredHistory.map((h: any) => {
     cumNet += h.net_value;
     return {
       date: h.tanggal.slice(5),
@@ -708,7 +775,19 @@ function TickerDetail({ ticker, history, scoreHistory, bandarItems, brokerColor 
     };
   });
 
-  const lastEntry = overlayData[overlayData.length - 1];
+  // Unfiltered overlay — used only for lastEntry/insightText (full history)
+  let cumNetFull = 0;
+  const overlayDataFull = history.map((h: any) => {
+    cumNetFull += h.net_value;
+    return {
+      date: h.tanggal.slice(5),
+      cumNet: cumNetFull / 1e9,
+      avgBuy: h.buy_avg ?? null,
+      close: priceData[h.tanggal] ?? null,
+    };
+  });
+
+  const lastEntry = overlayDataFull[overlayDataFull.length - 1];
   let insightText = "";
   let insightColor = "text-muted-foreground";
   if (lastEntry?.avgBuy && lastEntry?.close) {
@@ -739,62 +818,247 @@ function TickerDetail({ ticker, history, scoreHistory, bandarItems, brokerColor 
     return v.toLocaleString("id-ID");
   };
 
+  // Kolom broker dinamis dari allBrokerHistory
+  const brokerCodes = [...new Set(allBrokerHistory.map((r: any) => r.broker_code as string))].sort();
+
+  // Line helpers
+  const isLineActive = (bc: string) => activeLines[bc] !== false;
+  const getBrokerLineColor = (bc: string, idx: number): string =>
+    activeBrokers.find((b: any) => b.broker_code === bc)?.color
+    ?? BROKER_LINE_COLORS[idx % BROKER_LINE_COLORS.length];
+
+  // Enhanced chart data: one entry per date, combined buy/sell bars + per-broker cumulative net lines
+  const filteredAllBroker = applyPeriodFilter(allBrokerHistory);
+  const allFilteredDates = [...new Set(filteredAllBroker.map((r: any) => r.tanggal as string))].sort();
+  const _brokerCumAcc: Record<string, number> = {};
+  const enhancedChartData = allFilteredDates.map(date => {
+    const dateRows = filteredAllBroker.filter((r: any) => r.tanggal === date);
+    const entry: Record<string, any> = {
+      date: date.slice(5),
+      buy: dateRows.reduce((s: number, r: any) => s + (r.buy_value ?? 0), 0) / 1e9,
+      sell: -(dateRows.reduce((s: number, r: any) => s + (r.sell_value ?? 0), 0) / 1e9),
+    };
+    for (const bc of brokerCodes) {
+      const row = dateRows.find((r: any) => r.broker_code === bc);
+      if (row) _brokerCumAcc[bc] = (_brokerCumAcc[bc] ?? 0) + row.net_value;
+      entry[`cum_${bc}`] = (_brokerCumAcc[bc] ?? 0) / 1e9;
+    }
+    return entry;
+  });
+
   return (
     <div className="p-4 space-y-4 bg-muted/10 border-t border-border/30">
-      <h3 className="text-sm font-bold text-primary">{ticker} — Riwayat</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <p className="text-[10px] text-muted-foreground mb-1">Buy vs Sell (Miliar)</p>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                <RechartsTooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 10 }} />
-                <Bar dataKey="buy" fill="hsl(142 76% 36%)" name="Buy" />
-                <Bar dataKey="sell" fill="hsl(0 84% 60%)" name="Sell" />
-              </BarChart>
-            </ResponsiveContainer>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-bold text-primary">{ticker} — Riwayat</h3>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex gap-1">
+            {([null, "5H", "10H", "20H"] as const).map(p => (
+              <Button
+                key={p ?? "all"}
+                size="sm"
+                variant={periodFilter === p ? "default" : "outline"}
+                className="h-7 text-[10px] px-2"
+                onClick={() => setPeriodFilter(p)}
+              >{p ?? "All"}</Button>
+            ))}
+            <Button
+              size="sm"
+              variant={periodFilter === "custom" ? "default" : "outline"}
+              className="h-7 text-[10px] px-2"
+              onClick={() => setPeriodFilter("custom")}
+            >Custom</Button>
+          </div>
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant={viewMode === "gabungan" ? "default" : "outline"}
+              className="h-7 text-[10px] px-3"
+              onClick={() => setViewMode("gabungan")}
+            >Gabungan</Button>
+            <Button
+              size="sm"
+              variant={viewMode === "perbroker" ? "default" : "outline"}
+              className="h-7 text-[10px] px-3"
+              onClick={() => setViewMode("perbroker")}
+            >Per Broker</Button>
           </div>
         </div>
-        <div>
-          <p className="text-[10px] text-muted-foreground mb-1">
-            Cum Net + Avg Buy + Close {loadingPrice && <Loader2 className="h-3 w-3 inline ml-1 animate-spin" />}
-          </p>
-          <div className="h-[180px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={overlayData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 9, fill: "#00FF88" }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: "#FFD700" }} />
-                <RechartsTooltip content={<OverlayTooltip />} />
-                <ReferenceLine yAxisId="left" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
-                <Line yAxisId="left" type="monotone" dataKey="cumNet" stroke="#00FF88" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-                <Line yAxisId="right" type="monotone" dataKey="avgBuy" stroke="#FFD700" strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls />
-                <Line yAxisId="right" type="monotone" dataKey="close" stroke="#FFFFFF" strokeWidth={1.5} dot={false} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+      </div>
+
+      {periodFilter === "custom" && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[10px] text-muted-foreground">Dari:</span>
+          <input
+            type="date"
+            value={customFrom}
+            onChange={e => setCustomFrom(e.target.value)}
+            className="bg-background border border-border rounded px-2 py-1 text-[10px] text-foreground"
+          />
+          <span className="text-[10px] text-muted-foreground">Sampai:</span>
+          <input
+            type="date"
+            value={customTo}
+            onChange={e => setCustomTo(e.target.value)}
+            className="bg-background border border-border rounded px-2 py-1 text-[10px] text-foreground"
+          />
+        </div>
+      )}
+
+      {/* === COMBINED VIEW === */}
+      {viewMode === "gabungan" && (
+        filteredCombinedRows.length === 0 ? (
+          <div className="text-xs text-muted-foreground">Belum ada data gabungan untuk {ticker}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-[10px]">Tanggal</TableHead>
+                  {brokerCodes.map(bc => (
+                    <TableHead key={bc} className="text-[10px] text-right">{bc} Net</TableHead>
+                  ))}
+                  <TableHead className="text-[10px] text-right font-semibold">Combined Net</TableHead>
+                  <TableHead className="text-[10px] text-center">Pattern</TableHead>
+                  <TableHead className="text-[10px] text-center">Flag</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredCombinedRows.map(r => {
+                  const patternEl = r.combinedNet > 0
+                    ? <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[8px]">Akumulasi</Badge>
+                    : r.combinedNet < 0
+                    ? <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[8px]">Distribusi</Badge>
+                    : <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30 text-[8px]">Neutral</Badge>;
+                  return (
+                    <TableRow key={r.tanggal} className={r.combinedNet < 0 ? "bg-red-500/5" : r.hasDivergence ? "bg-orange-500/5" : ""}>
+                      <TableCell className="font-mono text-[10px]">{r.tanggal.slice(5)}</TableCell>
+                      {brokerCodes.map(bc => {
+                        const val = r.brokerBreakdown[bc];
+                        const bColor = activeBrokers.find((b: any) => b.broker_code === bc)?.color;
+                        return (
+                          <TableCell key={bc} className={cn(
+                            "text-right font-mono text-[10px]",
+                            val == null ? "text-muted-foreground"
+                              : val > 0 ? "text-green-400"
+                              : val < 0 ? "text-red-400"
+                              : "text-muted-foreground"
+                          )} style={bColor && val != null ? { color: val > 0 ? bColor : undefined } : undefined}>
+                            {val != null ? `${val > 0 ? "+" : ""}${formatVal(val)}` : "—"}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className={cn(
+                        "text-right font-mono text-[10px] font-bold",
+                        r.combinedNet > 0 ? "text-green-400" : r.combinedNet < 0 ? "text-red-400" : "text-muted-foreground"
+                      )}>
+                        {r.combinedNet > 0 ? "+" : ""}{formatVal(r.combinedNet)}
+                      </TableCell>
+                      <TableCell className="text-center">{patternEl}</TableCell>
+                      <TableCell className="text-center text-[10px]">
+                        {r.hasDivergence && <span title="Broker berbeda arah">⚠️</span>}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
-          {insightText && <div className={cn("text-[10px] mt-1 p-1.5 rounded bg-muted/30", insightColor)}>{insightText}</div>}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-        <div><span className="text-muted-foreground">Total hari:</span> <span className="font-bold">{totalDays}</span></div>
-        <div><span className="text-muted-foreground">Net beli:</span> <span className="font-bold text-green-400">{netBuyDays} ({totalDays > 0 ? Math.round(netBuyDays / totalDays * 100) : 0}%)</span></div>
-        <div><span className="text-muted-foreground">Cum net:</span> <span className={cn("font-bold", totalCumNet > 0 ? "text-green-400" : "text-red-400")}>{formatVal(totalCumNet)}</span></div>
-      </div>
-      <div className="text-[10px] text-muted-foreground bg-muted/20 rounded px-2 py-1">
-        Data tersedia: {history.map((h: any) => {
-          const d = new Date(h.tanggal + "T00:00:00");
-          return `${d.getDate()} ${["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][d.getMonth()]}`;
-        }).join(" | ")} ({history.length} hari)
-      </div>
-      {history.length < 3 && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-2 text-xs text-yellow-400">
-          ⚠️ Data terbatas ({history.length} hari) — benchmark kurang akurat
-        </div>
+        )
+      )}
+
+      {/* === PER BROKER VIEW (existing charts) === */}
+      {viewMode === "perbroker" && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-1">Buy vs Sell + Cum Net Broker (Miliar)</p>
+              <div className="h-[180px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={enhancedChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
+                    <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
+                    <RechartsTooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 10 }} />
+                    <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+                    <Bar dataKey="buy" fill="hsl(142 76% 36%)" name="Buy" />
+                    <Bar dataKey="sell" fill="hsl(0 84% 60%)" name="Sell" />
+                    {brokerCodes.map((bc, idx) =>
+                      isLineActive(bc) ? (
+                        <Line
+                          key={bc}
+                          type="monotone"
+                          dataKey={`cum_${bc}`}
+                          stroke={getBrokerLineColor(bc, idx)}
+                          strokeWidth={1.5}
+                          dot={false}
+                          name={`${bc} Cum`}
+                          connectNulls
+                        />
+                      ) : null
+                    )}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              {brokerCodes.length > 0 && (
+                <div className="flex items-center gap-3 flex-wrap mt-1.5">
+                  <span className="text-[10px] text-muted-foreground">Lines:</span>
+                  {brokerCodes.map((bc, idx) => {
+                    const color = getBrokerLineColor(bc, idx);
+                    return (
+                      <label key={bc} className="flex items-center gap-1 text-[10px] cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isLineActive(bc)}
+                          onChange={e => setActiveLines(prev => ({ ...prev, [bc]: e.target.checked }))}
+                          className="h-3 w-3"
+                        />
+                        <span className="w-2 h-2 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: color }} />
+                        <span style={{ color }}>{bc}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-1">
+                Cum Net + Avg Buy + Close {loadingPrice && <Loader2 className="h-3 w-3 inline ml-1 animate-spin" />}
+              </p>
+              <div className="h-[180px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={filteredOverlayData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                    <XAxis dataKey="date" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 9, fill: "#00FF88" }} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: "#FFD700" }} />
+                    <RechartsTooltip content={<OverlayTooltip />} />
+                    <ReferenceLine yAxisId="left" y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+                    <Line yAxisId="left" type="monotone" dataKey="cumNet" stroke="#00FF88" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                    <Line yAxisId="right" type="monotone" dataKey="avgBuy" stroke="#FFD700" strokeWidth={1.5} strokeDasharray="5 3" dot={false} connectNulls />
+                    <Line yAxisId="right" type="monotone" dataKey="close" stroke="#FFFFFF" strokeWidth={1.5} dot={false} connectNulls />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              {insightText && <div className={cn("text-[10px] mt-1 p-1.5 rounded bg-muted/30", insightColor)}>{insightText}</div>}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Total hari:</span> <span className="font-bold">{totalDays}</span></div>
+            <div><span className="text-muted-foreground">Net beli:</span> <span className="font-bold text-green-400">{netBuyDays} ({totalDays > 0 ? Math.round(netBuyDays / totalDays * 100) : 0}%)</span></div>
+            <div><span className="text-muted-foreground">Cum net:</span> <span className={cn("font-bold", totalCumNet > 0 ? "text-green-400" : "text-red-400")}>{formatVal(totalCumNet)}</span></div>
+          </div>
+          <div className="text-[10px] text-muted-foreground bg-muted/20 rounded px-2 py-1">
+            Data tersedia: {history.map((h: any) => {
+              const d = new Date(h.tanggal + "T00:00:00");
+              return `${d.getDate()} ${["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][d.getMonth()]}`;
+            }).join(" | ")} ({history.length} hari)
+          </div>
+          {history.length < 3 && (
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md p-2 text-xs text-yellow-400">
+              ⚠️ Data terbatas ({history.length} hari) — benchmark kurang akurat
+            </div>
+          )}
+        </>
       )}
     </div>
   );

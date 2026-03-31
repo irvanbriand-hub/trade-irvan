@@ -41,6 +41,16 @@ export interface AkScoreRow {
   created_at: string;
 }
 
+export type CombinedPattern = "HYPERACCUM" | "ACCELERATION" | "REVERSAL" | "DIVERGENCE" | "DISTRIBUTION" | "NORMAL";
+
+export interface CombinedDateRow {
+  tanggal: string;
+  combinedNet: number;
+  brokerBreakdown: Record<string, number>; // { AK: 1.2e9, BK: -0.5e9 }
+  hasDivergence: boolean;
+  pattern: CombinedPattern;
+}
+
 export interface ParsedAkRow {
   ticker: string;
   buy_value: number | null;
@@ -300,20 +310,28 @@ export function useAkTracker(brokerCode?: string) {
     }
 
     const scoreRows: any[] = [];
-    
+
+    // Pre-compute combined net per ticker (all brokers) for the current date
+    // Digunakan untuk streak agar tidak double-count tanggal yang sama dari 2 broker
+    const todayCombinedNetMap = new Map<string, number>();
     for (const row of dataForDate) {
-      const tickerHistory = relevantData
-        .filter(d => d.ticker === row.ticker && d.tanggal < tanggal)
+      todayCombinedNetMap.set(row.ticker, (todayCombinedNetMap.get(row.ticker) ?? 0) + row.net_value);
+    }
+
+    for (const row of dataForDate) {
+      // Per-broker history untuk avgBuyRolling — buy_avg adalah data spesifik per broker
+      const tickerBrokerHistory = relevantData
+        .filter(d => d.ticker === row.ticker && d.broker_code === row.broker_code && d.tanggal < tanggal)
         .sort((a, b) => b.tanggal.localeCompare(a.tanggal));
 
-      const recentBuys = tickerHistory
+      const recentBuys = tickerBrokerHistory
         .filter(h => (h.buy_value ?? 0) > 0)
         .slice(0, rollingWindow);
-      
+
       const avgBuyRolling = recentBuys.length > 0
         ? recentBuys.reduce((s, h) => s + (h.buy_value ?? 0), 0) / recentBuys.length
         : 0;
-      
+
       const buyVsAvgRatio = avgBuyRolling > 0 ? (row.buy_value ?? 0) / avgBuyRolling : 0;
 
       let tagVsAk = "NORMAL";
@@ -337,29 +355,39 @@ export function useAkTracker(brokerCode?: string) {
         else if ((row.buy_value ?? 0) > 20_000_000_000) tagVsSaham = "BIG_ACCUM";
       }
 
+      // Streak, reversal & cumulative: pakai combined net semua broker per tanggal
+      // Ini mencegah double-count ketika AK + BK keduanya input di tanggal yang sama
+      const todayCombinedNet = todayCombinedNetMap.get(row.ticker) ?? row.net_value;
+      const allTickerPriorRows = brokerData.filter(d => d.ticker === row.ticker && d.tanggal < tanggal);
+      const combinedByDate = new Map<string, number>();
+      for (const h of allTickerPriorRows) {
+        combinedByDate.set(h.tanggal, (combinedByDate.get(h.tanggal) ?? 0) + h.net_value);
+      }
+      const sortedCombinedDates = [...combinedByDate.keys()].sort((a, b) => b.localeCompare(a));
+
       let streakBeli = 0;
       let streakJual = 0;
-      if (row.net_value > 0) {
+      if (todayCombinedNet > 0) {
         streakBeli = 1;
-        for (const h of tickerHistory) {
-          if (h.net_value > 0) streakBeli++;
+        for (const d of sortedCombinedDates) {
+          if ((combinedByDate.get(d) ?? 0) > 0) streakBeli++;
           else break;
         }
-      } else if (row.net_value < 0) {
+      } else if (todayCombinedNet < 0) {
         streakJual = 1;
-        for (const h of tickerHistory) {
-          if (h.net_value < 0) streakJual++;
+        for (const d of sortedCombinedDates) {
+          if ((combinedByDate.get(d) ?? 0) < 0) streakJual++;
           else break;
         }
       }
 
-      const prevNet = tickerHistory.length > 0 ? tickerHistory[0].net_value : 0;
-      const isReversalBuy = prevNet < 0 && row.net_value > 0;
-      const isReversalSell = prevNet > 0 && row.net_value < 0;
+      const prevCombinedNet = sortedCombinedDates.length > 0 ? (combinedByDate.get(sortedCombinedDates[0]) ?? 0) : 0;
+      const isReversalBuy = prevCombinedNet < 0 && todayCombinedNet > 0;
+      const isReversalSell = prevCombinedNet > 0 && todayCombinedNet < 0;
 
-      const cum5 = tickerHistory.slice(0, 4).reduce((s, h) => s + h.net_value, 0) + row.net_value;
-      const cum10 = tickerHistory.slice(0, 9).reduce((s, h) => s + h.net_value, 0) + row.net_value;
-      const cum20 = tickerHistory.slice(0, 19).reduce((s, h) => s + h.net_value, 0) + row.net_value;
+      const cum5 = sortedCombinedDates.slice(0, 4).reduce((s, d) => s + (combinedByDate.get(d) ?? 0), 0) + todayCombinedNet;
+      const cum10 = sortedCombinedDates.slice(0, 9).reduce((s, d) => s + (combinedByDate.get(d) ?? 0), 0) + todayCombinedNet;
+      const cum20 = sortedCombinedDates.slice(0, 19).reduce((s, d) => s + (combinedByDate.get(d) ?? 0), 0) + todayCombinedNet;
 
       let score = 0;
       if (row.net_value > 0) score += 20;
@@ -384,7 +412,7 @@ export function useAkTracker(brokerCode?: string) {
         user_id: user.id,
         tanggal,
         ticker: row.ticker,
-        broker_code: row.broker_code || "AK",
+        broker_code: row.broker_code || "UNKNOWN",
         score_total: score,
         tag,
         tag_vs_saham: tagVsSaham,
@@ -444,6 +472,64 @@ export function useAkTracker(brokerCode?: string) {
     return data.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
   };
 
+  // Menggabungkan semua broker per tanggal dan mendeteksi pattern
+  const getCombinedHistory = (ticker: string): CombinedDateRow[] => {
+    const tickerRows = brokerData.filter(d => d.ticker === ticker);
+    const byDate = new Map<string, Record<string, number>>();
+    for (const row of tickerRows) {
+      if (!byDate.has(row.tanggal)) byDate.set(row.tanggal, {});
+      byDate.get(row.tanggal)![row.broker_code] = row.net_value;
+    }
+
+    const sorted: CombinedDateRow[] = [...byDate.entries()]
+      .map(([tanggal, nets]) => {
+        const values = Object.values(nets);
+        const combinedNet = values.reduce((s, v) => s + v, 0);
+        return {
+          tanggal,
+          combinedNet,
+          brokerBreakdown: nets,
+          hasDivergence: values.some(v => v > 0) && values.some(v => v < 0),
+          pattern: "NORMAL" as CombinedPattern,
+        };
+      })
+      .sort((a, b) => a.tanggal.localeCompare(b.tanggal)); // ascending untuk context sebelumnya
+
+    // Pattern detection (loop ascending agar bisa lihat context sebelumnya)
+    for (let i = 0; i < sorted.length; i++) {
+      const row = sorted[i];
+      if (row.hasDivergence) { row.pattern = "DIVERGENCE"; continue; }
+      if (row.combinedNet < 0) { row.pattern = "DISTRIBUTION"; continue; }
+      if (row.combinedNet > 0) {
+        // REVERSAL: hari ini akumulasi setelah 3+ hari distribusi berturut-turut
+        let distStreak = 0;
+        for (let j = i - 1; j >= 0; j--) {
+          if (sorted[j].combinedNet < 0) distStreak++;
+          else break;
+        }
+        if (distStreak >= 3) { row.pattern = "REVERSAL"; continue; }
+
+        // HYPERACCUM: combined net hari ini > rata-rata 5 hari sebelumnya × 3
+        if (i >= 5) {
+          const avg5 = sorted.slice(i - 5, i).reduce((s, r) => s + r.combinedNet, 0) / 5;
+          if (avg5 > 0 && row.combinedNet > avg5 * 3) { row.pattern = "HYPERACCUM"; continue; }
+        }
+
+        // ACCELERATION: 3 hari naik berturut-turut (semua positif dan meningkat)
+        if (
+          i >= 2 &&
+          sorted[i - 1].combinedNet > 0 && sorted[i - 2].combinedNet > 0 &&
+          row.combinedNet > sorted[i - 1].combinedNet &&
+          sorted[i - 1].combinedNet > sorted[i - 2].combinedNet
+        ) {
+          row.pattern = "ACCELERATION"; continue;
+        }
+      }
+    }
+
+    return sorted;
+  };
+
   return {
     brokerData: filteredBrokerData,
     allBrokerData: brokerData,
@@ -458,5 +544,6 @@ export function useAkTracker(brokerCode?: string) {
     getScoresForDate,
     getTickerHistory,
     getTickerScoreHistory,
+    getCombinedHistory,
   };
 }
