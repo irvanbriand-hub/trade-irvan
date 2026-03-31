@@ -53,7 +53,7 @@ export function TradeHistory({ displayMode = "rp", formatValue }: TradeHistoryPr
   const [editNotes, setEditNotes] = useState("");
 
   // Delete confirm
-  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<{ id: string; trade_date: string } | null>(null);
 
   const fmt = (val: number) => {
     if (formatValue && displayMode) return formatValue(val, displayMode);
@@ -260,7 +260,7 @@ export function TradeHistory({ displayMode = "rp", formatValue }: TradeHistoryPr
 
   const handleDelete = () => {
     if (!deleteId) return;
-    deleteTrade.mutate(deleteId, {
+    deleteTrade.mutate({ id: deleteId.id, trade_date: deleteId.trade_date }, {
       onSuccess: () => {
         toast({ title: "Berhasil", description: "Transaksi berhasil dihapus" });
         setDeleteId(null);
@@ -446,7 +446,7 @@ export function TradeHistory({ displayMode = "rp", formatValue }: TradeHistoryPr
                           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEditModal(t)}>
                             <Pencil className="h-3 w-3" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteId(t.id)}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteId({ id: t.id, trade_date: t.trade_date })}>
                             <Trash2 className="h-3 w-3 text-loss" />
                           </Button>
                         </div>

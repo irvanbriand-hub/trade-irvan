@@ -5,7 +5,9 @@ import { calculatePositions } from "@/lib/positionCalculator";
 import { useEquityToggle, useEquityCalc } from "@/hooks/useEquityToggle";
 import { DisplayModeToggle } from "@/components/DisplayModeToggle";
 import { TradingCalendar } from "@/components/TradingCalendar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { StampDutySection } from "@/components/StampDutySection";
+import { TickerSummarySection } from "@/components/statistics/TickerSummarySection";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -108,31 +110,17 @@ export default function Statistics() {
             <StatCard icon={DollarSign} label="Total Equity" value={fmtPL(stats.totalEquity)} color={stats.totalEquity >= 0 ? "gain" : "loss"} />
           </div>
 
-          <Card className="border-border">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Ringkasan per Saham</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stats.tradeResults.length > 0 ? (
-                <div className="space-y-2">
-                  {stats.tradeResults
-                    .sort((a, b) => b.pl - a.pl)
-                    .map((r) => (
-                      <div key={r.ticker} className="flex items-center justify-between p-3 rounded-lg bg-accent/30 border border-border">
-                        <span className="font-bold font-mono-data text-sm">{r.ticker}</span>
-                        <span className={`font-mono-data text-sm font-semibold ${r.pl >= 0 ? "text-gain" : "text-loss"}`}>
-                          {fmtPL(r.pl)}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              ) : (
-                <p className="text-center py-4 text-muted-foreground text-sm">Belum ada posisi tertutup</p>
-              )}
-            </CardContent>
-          </Card>
+          <TickerSummarySection
+            trades={trades}
+            selectedCategory={selectedCategory}
+            mode={mode}
+            formatValue={formatValue}
+            formatRupiah={formatRupiah}
+          />
         </>
       )}
+
+      <StampDutySection />
     </div>
   );
 }

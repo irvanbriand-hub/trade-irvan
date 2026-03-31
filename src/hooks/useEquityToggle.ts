@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { usePortfolio } from "./usePortfolio";
 import { useModalSummary } from "./useModalTransactions";
+import { useStampDuty } from "./useStampDuty";
 
 export type DisplayMode = "rp" | "pct";
 
@@ -21,13 +22,20 @@ export function useEquityToggle() {
 export function useEquityCalc() {
   const { totalRealizedPL, totalUnrealizedPL } = usePortfolio();
   const { modalBersih } = useModalSummary();
+  const { data: stampDuties } = useStampDuty();
 
   // Use modal bersih from DB; fallback to 0 if no transactions yet
   const effectiveModal = modalBersih > 0 ? modalBersih : 0;
 
+  // Total biaya materai yang sudah terjadi
+  const totalStampDuty = useMemo(() => {
+    if (!stampDuties) return 0;
+    return stampDuties.reduce((sum, s) => sum + s.amount, 0);
+  }, [stampDuties]);
+
   const totalEquity = useMemo(() => {
-    return effectiveModal + totalRealizedPL + totalUnrealizedPL;
-  }, [effectiveModal, totalRealizedPL, totalUnrealizedPL]);
+    return effectiveModal + totalRealizedPL + totalUnrealizedPL - totalStampDuty;
+  }, [effectiveModal, totalRealizedPL, totalUnrealizedPL, totalStampDuty]);
 
   const toPct = (rupiah: number) => {
     if (effectiveModal <= 0) return 0;
@@ -50,5 +58,5 @@ export function useEquityCalc() {
     ? ((totalRealizedPL + totalUnrealizedPL) / effectiveModal) * 100
     : 0;
 
-  return { totalEquity, toPct, formatPct, formatRupiah, formatValue, modalBersih: effectiveModal, returnPct };
+  return { totalEquity, toPct, formatPct, formatRupiah, formatValue, modalBersih: effectiveModal, returnPct, totalStampDuty };
 }

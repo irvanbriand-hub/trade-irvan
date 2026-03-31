@@ -13,12 +13,16 @@ import { useTrades } from "@/hooks/useTrades";
 import { useIHSG } from "@/hooks/useIHSG";
 import { useEquityToggle, useEquityCalc, type DisplayMode } from "@/hooks/useEquityToggle";
 import { calculatePositions } from "@/lib/positionCalculator";
+import { useModalTransactions } from "@/hooks/useModalTransactions";
+import { useStampDuty, type StampDuty } from "@/hooks/useStampDuty";
 
 interface DayData {
   date: string;
   trades: any[];
   totalPL: number;
-  totalPLPct: number;
+  totalPLPct: number;   // Daily % = (totalPL - materai hari itu) / totalPortoAwalHari
+  totalPortoAwal: number;
+  stampDuty: number;    // biaya materai hari itu (0 jika tidak ada)
   wins: number;
   losses: number;
 }
@@ -31,6 +35,8 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<DayData | null>(null);
   const { data: trades } = useTrades();
+  const { data: modalTransactions } = useModalTransactions();
+  const { data: stampDuties } = useStampDuty();
   const { data: ihsgMap } = useIHSG(currentMonth);
   const { mode: internalMode, toggle } = useEquityToggle();
   const { formatValue, formatRupiah: fmtRp } = useEquityCalc();
@@ -43,15 +49,19 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
     const result = calculatePositions(trades);
     const map = new Map<string, DayData>();
 
-    // Build avg price lookup from closed trades (FIFO-based)
+    // Build map of stamp duty per date
+    const stampDutyByDate = new Map<string, number>();
+    for (const s of (stampDuties || [])) {
+      stampDutyByDate.set(s.trade_date, s.amount);
+    }
+
     // Add closed trades to their sell dates
     for (const c of result.closedTrades) {
       const dateKey = c.date;
       if (!map.has(dateKey)) {
-        map.set(dateKey, { date: dateKey, trades: [], totalPL: 0, totalPLPct: 0, wins: 0, losses: 0 });
+        map.set(dateKey, { date: dateKey, trades: [], totalPL: 0, totalPLPct: 0, totalPortoAwal: 0, stampDuty: 0, wins: 0, losses: 0 });
       }
       const day = map.get(dateKey)!;
-      // Find the original sell trade to get full info
       const origTrade = trades.find((t: any) => t.trade_type === "SELL" && t.ticker === c.ticker && t.trade_date === c.date && t.lots === c.sellLots);
       const avgBuyPrice = c.costBasis / (c.sellLots * 100);
       const plPct = c.costBasis > 0 ? (c.realizedPL / c.costBasis) * 100 : 0;
@@ -61,7 +71,7 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
         plRupiah: c.realizedPL,
         plPct,
         buyFee: 0,
-        sellFee: 0,
+        sellFee: Number(origTrade?.fee || 0),
       });
       day.totalPL += c.realizedPL;
       if (c.realizedPL > 0) day.wins++;
@@ -74,7 +84,7 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
       if (t.trade_type !== "BUY") continue;
       const dateKey = t.trade_date;
       if (!map.has(dateKey)) {
-        map.set(dateKey, { date: dateKey, trades: [], totalPL: 0, totalPLPct: 0, wins: 0, losses: 0 });
+        map.set(dateKey, { date: dateKey, trades: [], totalPL: 0, totalPLPct: 0, totalPortoAwal: 0, stampDuty: 0, wins: 0, losses: 0 });
       }
       const day = map.get(dateKey)!;
       const alreadyAdded = day.trades.some((tr: any) => tr.id === t.id);
@@ -83,14 +93,60 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
       }
     }
 
-    for (const [, day] of map) {
-      const sellTrades = day.trades.filter((t: any) => t.trade_type === "SELL");
-      const totalCostBasis = sellTrades.reduce((s: number, t: any) => s + (t.avgBuyPrice || 0) * t.lots * 100, 0);
-      day.totalPLPct = totalCostBasis > 0 ? (day.totalPL / totalCostBasis) * 100 : 0;
+    // ── Hitung totalPortoAwalHari untuk setiap hari dengan SELL ──────────────
+    // Porto awal hari D = Cash awal D + Cost Basis posisi open awal D
+    //
+    // Cash awal D  = modal bersih s/d D-1
+    //              + net cash dari semua trade s/d D-1 (sell - buy total_amount)
+    //              - materai s/d D-1
+    //
+    // Cost basis open = sum(totalBuyCost) posisi yang masih open sebelum hari D
+    //
+    // Daily % = (Realized P/L hari D - materai hari D) / Porto awal D × 100
+    // ─────────────────────────────────────────────────────────────────────────
+    const sortedDatesWithSells = [...map.keys()]
+      .filter(d => map.get(d)!.wins + map.get(d)!.losses > 0)
+      .sort();
+
+    for (const targetDate of sortedDatesWithSells) {
+      // Trades sebelum targetDate (strictly <)
+      const tradesBefore = sortedTrades.filter((t: any) => t.trade_date < targetDate);
+
+      // Modal bersih s/d hari sebelum
+      const modalNet = (modalTransactions || [])
+        .filter(tx => tx.tanggal < targetDate)
+        .reduce((sum, tx) => sum + (tx.tipe === "TOP_UP" ? Number(tx.jumlah) : -Number(tx.jumlah)), 0);
+
+      // Net cash dari aktivitas trading sebelum hari ini
+      const tradingCash = tradesBefore.reduce((sum: number, t: any) => {
+        const amount = Number(t.total_amount) || (Number(t.price) * Number(t.lots) * 100);
+        return t.trade_type === "SELL" ? sum + amount : sum - amount;
+      }, 0);
+
+      // Materai yang sudah dibayar sebelum hari ini
+      const stampDutyPaid = (stampDuties || [])
+        .filter(s => s.trade_date < targetDate)
+        .reduce((sum, s) => sum + s.amount, 0);
+
+      const cash = modalNet + tradingCash - stampDutyPaid;
+
+      // Cost basis posisi open sebelum hari ini
+      const { openPositions } = calculatePositions(tradesBefore);
+      const openCostBasis = openPositions.reduce((sum, p) => sum + p.totalBuyCost, 0);
+
+      const totalPortoAwal = cash + openCostBasis;
+      const day = map.get(targetDate)!;
+      const materai = stampDutyByDate.get(targetDate) || 0;
+
+      day.totalPortoAwal = totalPortoAwal;
+      day.stampDuty = materai;
+      day.totalPLPct = totalPortoAwal > 0
+        ? ((day.totalPL - materai) / totalPortoAwal) * 100
+        : 0;
     }
 
     return map;
-  }, [trades]);
+  }, [trades, modalTransactions, stampDuties]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -115,8 +171,19 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
     return { tradingDays, totalTrades, wins, losses, winRate, totalPL };
   }, [dayDataMap, currentMonth]);
 
-  const formatPL = (val: number) => formatValue(val, mode);
+  const { formatPct } = useEquityCalc();
   const formatRupiah = (val: number) => fmtRp(val);
+
+  // Untuk P/L di kalender:
+  // - mode "rp"  → tampilkan rupiah
+  // - mode "pct" → gunakan totalPLPct (sudah pakai porto awal hari), bukan modalBersih
+  const formatDayPL = (day: DayData) => {
+    if (mode === "pct") return formatPct(day.totalPLPct);
+    return fmtRp(day.totalPL);
+  };
+
+  // Untuk nilai lain (non-daily) tetap pakai formatValue normal
+  const formatPL = (val: number) => formatValue(val, mode);
 
   const months = Array.from({ length: 12 }, (_, i) => i);
   const currentYear = currentMonth.getFullYear();
@@ -212,8 +279,16 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
                             <span className="text-loss">{dayData.losses}L</span>
                           </div>
                           <div className={cn("text-[10px] font-bold font-mono", dayData.totalPL >= 0 ? "text-gain" : "text-loss")}>
-                            {formatPL(dayData.totalPL)}
+                            {formatDayPL(dayData)}
                           </div>
+                          {dayData.stampDuty > 0 && (
+                            <div
+                              className="text-[9px] text-muted-foreground font-mono"
+                              title={`Biaya materai: ${fmtRp(dayData.stampDuty)}`}
+                            >
+                              -{(dayData.stampDuty / 1000).toFixed(0)}rb materai
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -259,7 +334,7 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
                         <Badge className={cn(
                           selectedDay.totalPL >= 0 ? "bg-gain/20 text-gain border-gain/30" : "bg-loss/20 text-loss border-loss/30"
                         )}>
-                          {formatPL(selectedDay.totalPL)}
+                          {formatDayPL(selectedDay)}
                         </Badge>
                       </>
                     )}
@@ -298,7 +373,11 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
                         <td className="p-2 text-right font-mono">{t.lots}</td>
                         <td className="p-2 text-right font-mono">{t.trade_type === "SELL" ? formatRupiah((t.buyFee || 0) + (t.sellFee || 0)) : formatRupiah(Number(t.fee || 0))}</td>
                         <td className={cn("p-2 text-right font-mono font-semibold", t.plRupiah > 0 ? "text-gain" : t.plRupiah < 0 ? "text-loss" : "text-muted-foreground")}>
-                          {t.trade_type === "SELL" ? formatPL(t.plRupiah) : "-"}
+                          {t.trade_type === "SELL"
+                            ? mode === "pct"
+                              ? `${t.plPct >= 0 ? "+" : ""}${t.plPct.toFixed(2)}%`
+                              : formatRupiah(t.plRupiah)
+                            : "-"}
                         </td>
                         <td className="p-2 text-muted-foreground max-w-[120px] truncate">{t.notes || "-"}</td>
                       </tr>
@@ -307,13 +386,35 @@ export function TradingCalendar({ displayMode: externalMode }: TradingCalendarPr
                 </table>
               </div>
               {(selectedDay.wins > 0 || selectedDay.losses > 0) && (
-                <div className="flex items-center justify-between text-xs border-t border-border pt-3 mt-2">
-                  <span className="text-muted-foreground">
-                    Total Fee: {formatRupiah(selectedDay.trades.filter((t: any) => t.trade_type === "SELL").reduce((s: number, t: any) => s + (t.buyFee || 0) + (t.sellFee || 0), 0))}
-                  </span>
-                  <span className={cn("font-bold font-mono", selectedDay.totalPL >= 0 ? "text-gain" : "text-loss")}>
-                    Total P/L: {formatPL(selectedDay.totalPL)}
-                  </span>
+                <div className="space-y-1 text-xs border-t border-border pt-3 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">
+                      Total Fee: {formatRupiah(selectedDay.trades.filter((t: any) => t.trade_type === "SELL").reduce((s: number, t: any) => s + (t.buyFee || 0) + (t.sellFee || 0), 0))}
+                    </span>
+                    <span className={cn("font-bold font-mono", selectedDay.totalPL >= 0 ? "text-gain" : "text-loss")}>
+                      Total P/L: {fmtRp(selectedDay.totalPL)}
+                    </span>
+                  </div>
+                  {selectedDay.stampDuty > 0 && (
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Biaya Materai</span>
+                      <span className="font-mono text-loss">-{formatRupiah(selectedDay.stampDuty)}</span>
+                    </div>
+                  )}
+                  {selectedDay.totalPortoAwal > 0 && (
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span>Porto Awal Hari</span>
+                      <span className="font-mono">{formatRupiah(selectedDay.totalPortoAwal)}</span>
+                    </div>
+                  )}
+                  {selectedDay.totalPortoAwal > 0 && (
+                    <div className="flex items-center justify-between font-semibold">
+                      <span>Daily Return</span>
+                      <span className={cn("font-mono", selectedDay.totalPLPct >= 0 ? "text-gain" : "text-loss")}>
+                        {selectedDay.totalPLPct >= 0 ? "+" : ""}{selectedDay.totalPLPct.toFixed(2)}%
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </>
