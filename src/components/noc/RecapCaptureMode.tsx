@@ -1,0 +1,297 @@
+import { forwardRef } from 'react';
+import { getPO } from '@/lib/noc/classifiers';
+import { getEffectiveTargetOnlineDB } from '@/lib/noc/queries';
+import type { TTRecordDB, PO } from '@/lib/noc/types';
+
+interface RecapCaptureModeProps {
+  records: TTRecordDB[];
+  poList: PO[];
+  selectedDate: string;
+  lastUploadTime?: string;
+}
+
+interface POGroup {
+  poName: string;
+  po: PO | null;
+  provinsiMap: Map<string, TTRecordDB[]>;
+  ttCount: number;
+}
+
+function groupByPO(records: TTRecordDB[], poList: PO[]): POGroup[] {
+  const map = new Map<string, { po: PO | null; provinsiMap: Map<string, TTRecordDB[]> }>();
+
+  for (const r of records) {
+    const po = getPO(r.provinsi ?? '', r.kabupaten ?? '', poList);
+    const poName = po?.name ?? '— Tidak Terpetakan';
+    const prov = r.provinsi || '— Provinsi Tidak Dikenal';
+
+    if (!map.has(poName)) map.set(poName, { po, provinsiMap: new Map() });
+    const entry = map.get(poName)!;
+    if (!entry.provinsiMap.has(prov)) entry.provinsiMap.set(prov, []);
+    entry.provinsiMap.get(prov)!.push(r);
+  }
+
+  return Array.from(map.entries())
+    .map(([poName, { po, provinsiMap }]) => ({
+      poName,
+      po,
+      provinsiMap,
+      ttCount: Array.from(provinsiMap.values()).flat().length,
+    }))
+    .sort((a, b) => b.ttCount - a.ttCount);
+}
+
+function normalizeKabupaten(kab: string): string {
+  return kab.replace(/^KAB\.\s*/i, '').replace(/^KOTA\s*/i, '').trim().toUpperCase();
+}
+
+function getKabupatenLabel(provinsi: string, po: PO | null, rows: TTRecordDB[]): string {
+  if (!po?.kabupaten_coverage?.length) return provinsi;
+  const coverageSet = new Set(po.kabupaten_coverage.map((k) => k.toUpperCase()));
+  const activeKabs = [
+    ...new Set(
+      rows
+        .filter((tt) => coverageSet.has(normalizeKabupaten(tt.kabupaten ?? '')))
+        .map((tt) => normalizeKabupaten(tt.kabupaten ?? '')),
+    ),
+  ];
+  if (activeKabs.length === 0) return provinsi;
+  return `${provinsi} — ${activeKabs.join(', ')}`;
+}
+
+/**
+ * Greedy split: balance 2 kolom berdasarkan total TT count
+ */
+function splitPOsToColumns(groups: POGroup[]): [POGroup[], POGroup[]] {
+  const left: POGroup[] = [];
+  const right: POGroup[] = [];
+  let leftCount = 0;
+  let rightCount = 0;
+
+  for (const g of groups) {
+    if (leftCount <= rightCount) {
+      left.push(g);
+      leftCount += g.ttCount;
+    } else {
+      right.push(g);
+      rightCount += g.ttCount;
+    }
+  }
+
+  return [left, right];
+}
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const S = {
+  // Row wrapper: flexbox so cells are vertically centered
+  rowBase: {
+    display: 'flex' as const,
+    alignItems: 'stretch' as const,
+    borderBottom: '1px solid #eee',
+    fontSize: '11px',
+    color: '#000',
+  },
+  // Shared cell base
+  cell: {
+    display: 'flex' as const,
+    alignItems: 'center' as const,
+    minHeight: '28px',
+    padding: '0 8px',
+  },
+  cellNameFlex: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cellDowntime: {
+    width: '95px',
+    flexShrink: 0,
+    justifyContent: 'center' as const,
+    textAlign: 'center' as const,
+    whiteSpace: 'nowrap' as const,
+  },
+  cellTarget: {
+    width: '110px',
+    flexShrink: 0,
+    justifyContent: 'center' as const,
+    textAlign: 'center' as const,
+  },
+  // Header row
+  headerRow: {
+    display: 'flex' as const,
+    backgroundColor: '#4CAF50',
+    color: '#fff',
+    fontWeight: 'bold' as const,
+    fontSize: '11px',
+    borderBottom: '1px solid #388E3C',
+  },
+  // PO / provinsi rows (full-width)
+  poRow: {
+    fontWeight: 'bold' as const,
+    fontSize: '12px',
+    backgroundColor: '#444',
+    color: '#fff',
+    padding: '4px 8px',
+    minHeight: '28px',
+    display: 'flex' as const,
+    alignItems: 'center' as const,
+  },
+  provinsiRow: {
+    fontWeight: 'bold' as const,
+    fontSize: '10px',
+    backgroundColor: '#C8E6C9',
+    color: '#1B5E20',
+    padding: '5px 8px',
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.04em',
+    display: 'flex' as const,
+    alignItems: 'center' as const,
+  },
+  rescheduleCell: {
+    textAlign: 'center' as const,
+    backgroundColor: '#FFF176',
+    fontSize: '9px',
+    lineHeight: '1.3',
+    justifyContent: 'center' as const,
+    flexDirection: 'column' as const,
+  },
+};
+
+// ─── RecapColumn ─────────────────────────────────────────────────────────────
+
+function RecapColumn({ groups }: { groups: POGroup[] }) {
+  return (
+    <div>
+      {/* Column header */}
+      <div style={S.headerRow}>
+        <div style={{ ...S.cell, ...S.cellNameFlex }}>SITE NAME</div>
+        <div style={{ ...S.cell, ...S.cellDowntime }}>TICKET AGING</div>
+        <div style={{ ...S.cell, ...S.cellTarget }}>TARGET ONLINE</div>
+      </div>
+
+      {groups.map((group) => {
+        const sortedProvinsi = Array.from(group.provinsiMap.entries()).sort(([a], [b]) =>
+          a.localeCompare(b),
+        );
+
+        return (
+          <div key={group.poName}>
+            {/* PO row */}
+            <div style={S.poRow}>{group.poName}</div>
+
+            {sortedProvinsi.map(([prov, rows]) => {
+              const sortedRows = [...rows].sort((a, b) => b.down_time - a.down_time);
+              return (
+                <div key={prov}>
+                  {/* Provinsi row */}
+                  <div style={S.provinsiRow}>{getKabupatenLabel(prov, group.po, rows)}</div>
+
+                  {/* Site rows */}
+                  {sortedRows.map((r) => {
+                    const isClosed = r.status === 'CLOSED';
+                    const effectiveTarget = getEffectiveTargetOnlineDB(r);
+                    const isReschedule = !isClosed && !!r.reschedule_note;
+
+                    if (isClosed) {
+                      return (
+                        <div key={r.id} style={{ ...S.rowBase, textDecoration: 'line-through', color: '#FF0000' }}>
+                          <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
+                          <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
+                          <div style={{ ...S.cell, ...S.cellTarget }}>CLOSED</div>
+                        </div>
+                      );
+                    }
+
+                    if (isReschedule) {
+                      return (
+                        <div key={r.id} style={S.rowBase}>
+                          <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
+                          <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
+                          <div style={{ ...S.cell, ...S.cellTarget, ...S.rescheduleCell }}>
+                            <span>{r.reschedule_note}</span>
+                            {effectiveTarget && <span>({effectiveTarget})</span>}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={r.id} style={S.rowBase}>
+                        <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
+                        <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
+                        <div style={{ ...S.cell, ...S.cellTarget }}>{effectiveTarget || '—'}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
+
+export const RecapCaptureMode = forwardRef<HTMLDivElement, RecapCaptureModeProps>(
+  ({ records, poList, selectedDate, lastUploadTime }, ref) => {
+    const groups = groupByPO(records, poList);
+    const [leftGroups, rightGroups] = splitPOsToColumns(groups);
+
+    const openCount = records.filter((r) => r.status === 'OPEN').length;
+    const closedCount = records.filter((r) => r.status === 'CLOSED').length;
+
+    return (
+      <div
+        ref={ref}
+        style={{
+          width: '1400px',
+          backgroundColor: '#fff',
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '11px',
+          color: '#000',
+          border: '1px solid #ccc',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '8px 12px',
+            borderBottom: '2px solid #333',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            backgroundColor: '#f5f5f5',
+          }}
+        >
+          <strong style={{ fontSize: '13px' }}>
+            NOC Daily Recap — Target Online: {selectedDate}{lastUploadTime ? ` | Update: ${lastUploadTime}` : ''}
+          </strong>
+          <span style={{ fontSize: '11px', color: '#555' }}>
+            {openCount} Open &nbsp;|&nbsp; {closedCount} Closed &nbsp;|&nbsp; {records.length} Total TT
+          </span>
+        </div>
+
+        {/* 2-column layout */}
+        <div style={{ display: 'flex', alignItems: 'stretch' }}>
+          {/* Left column */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <RecapColumn groups={leftGroups} />
+          </div>
+
+          {/* Red divider */}
+          <div style={{ width: '4px', backgroundColor: '#FF0000', alignSelf: 'stretch', flexShrink: 0 }} />
+
+          {/* Right column */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <RecapColumn groups={rightGroups} />
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
+
+RecapCaptureMode.displayName = 'RecapCaptureMode';

@@ -91,7 +91,7 @@ export type Database = {
       }
       ak_broker_data: {
         Row: {
-          broker_code: string | null
+          broker_code: string
           buy_avg: number | null
           buy_lot: number | null
           buy_value: number | null
@@ -106,7 +106,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          broker_code?: string | null
+          broker_code?: string
           buy_avg?: number | null
           buy_lot?: number | null
           buy_value?: number | null
@@ -121,7 +121,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          broker_code?: string | null
+          broker_code?: string
           buy_avg?: number | null
           buy_lot?: number | null
           buy_value?: number | null
@@ -140,7 +140,7 @@ export type Database = {
       ak_broker_scores: {
         Row: {
           avg_buy_rolling: number | null
-          broker_code: string | null
+          broker_code: string
           buy_vs_avg_ratio: number | null
           created_at: string
           cumulative_net_10d: number | null
@@ -164,7 +164,7 @@ export type Database = {
         }
         Insert: {
           avg_buy_rolling?: number | null
-          broker_code?: string | null
+          broker_code?: string
           buy_vs_avg_ratio?: number | null
           created_at?: string
           cumulative_net_10d?: number | null
@@ -188,7 +188,7 @@ export type Database = {
         }
         Update: {
           avg_buy_rolling?: number | null
-          broker_code?: string | null
+          broker_code?: string
           buy_vs_avg_ratio?: number | null
           created_at?: string
           cumulative_net_10d?: number | null
@@ -909,6 +909,42 @@ export type Database = {
         }
         Relationships: []
       }
+      po_list: {
+        Row: {
+          area: number
+          created_at: string | null
+          id: string
+          kabupaten_coverage: string[] | null
+          name: string
+          notes: string | null
+          provinsi_coverage: string[] | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          area: number
+          created_at?: string | null
+          id?: string
+          kabupaten_coverage?: string[] | null
+          name: string
+          notes?: string | null
+          provinsi_coverage?: string[] | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          area?: number
+          created_at?: string | null
+          id?: string
+          kabupaten_coverage?: string[] | null
+          name?: string
+          notes?: string | null
+          provinsi_coverage?: string[] | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       sk_monitoring: {
         Row: {
           adx_kondisi: string | null
@@ -969,6 +1005,36 @@ export type Database = {
           vok_tipe?: string | null
           vv0_saat_masuk?: number | null
           vv1_saat_masuk?: number | null
+        }
+        Relationships: []
+      }
+      stamp_duty: {
+        Row: {
+          amount: number
+          auto: boolean
+          created_at: string
+          id: string
+          notes: string | null
+          trade_date: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          auto?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          trade_date: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          auto?: boolean
+          created_at?: string
+          id?: string
+          notes?: string | null
+          trade_date?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1163,6 +1229,45 @@ export type Database = {
           id?: string
           name?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      tt_uploads: {
+        Row: {
+          close_noc: number | null
+          close_om: number | null
+          close_visit: number | null
+          created_at: string | null
+          id: string
+          summary: Json | null
+          total_closed: number | null
+          total_open: number | null
+          total_tt: number | null
+          upload_date: string
+        }
+        Insert: {
+          close_noc?: number | null
+          close_om?: number | null
+          close_visit?: number | null
+          created_at?: string | null
+          id?: string
+          summary?: Json | null
+          total_closed?: number | null
+          total_open?: number | null
+          total_tt?: number | null
+          upload_date: string
+        }
+        Update: {
+          close_noc?: number | null
+          close_om?: number | null
+          close_visit?: number | null
+          created_at?: string | null
+          id?: string
+          summary?: Json | null
+          total_closed?: number | null
+          total_open?: number | null
+          total_tt?: number | null
+          upload_date?: string
         }
         Relationships: []
       }

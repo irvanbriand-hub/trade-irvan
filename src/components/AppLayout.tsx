@@ -70,6 +70,11 @@ const navGroups: NavGroup[] = [
       { to: "/backup", label: "💾 Backup & Restore" },
     ],
   },
+  {
+    label: "NOC",
+    icon: "📡",
+    to: "/noc",
+  },
 ];
 
 function DesktopDropdown({ group }: { group: NavGroup }) {

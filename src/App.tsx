@@ -26,6 +26,7 @@ import ResearchScreener from "./pages/ResearchScreener";
 import AraHunter from "./pages/AraHunter";
 import JendralHunter from "./pages/JendralHunter";
 import BackupRestore from "./pages/BackupRestore";
+import NocLayout from "./pages/noc/NocLayout";
 
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -70,7 +71,8 @@ function AuthenticatedApp() {
         <Route path="/ara-hunter" element={<AraHunter />} />
         <Route path="/jendral-hunter" element={<JendralHunter />} />
         <Route path="/backup" element={<BackupRestore />} />
-        
+        <Route path="/noc/*" element={<NocLayout />} />
+
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
