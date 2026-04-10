@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Pencil, Check, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,8 @@ import type { TTRecordDB, PO } from '@/lib/noc/types';
 interface RecapTableProps {
   records: TTRecordDB[];
   poList: PO[];
+  /** Record id to scroll to and highlight on mount (used after cross-date navigation) */
+  initialHighlightId?: string | null;
 }
 
 interface POColumn {
@@ -70,7 +72,7 @@ interface EditState {
   rescheduleNote: string;
 }
 
-function SiteTableRow({ record }: { record: TTRecordDB }) {
+function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted?: boolean }) {
   const { mutate: updateRecord, isPending } = useUpdateTTRecord();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditState>({ targetOnline: '', rescheduleNote: '' });
@@ -138,9 +140,11 @@ function SiteTableRow({ record }: { record: TTRecordDB }) {
 
   return (
     <tr
+      id={`row-${record.id}`}
       className={[
         'group border-b border-border/30 last:border-0 hover:bg-muted/10 transition-colors',
         isReschedule && !isClosed ? 'bg-amber-500/5' : '',
+        highlighted ? 'bg-yellow-500/20 outline outline-1 outline-yellow-500/50' : '',
       ].join(' ')}
     >
       {/* Lokasi */}
@@ -211,13 +215,16 @@ function SiteTableRow({ record }: { record: TTRecordDB }) {
 
 // ─── PO Block ────────────────────────────────────────────────────────────────
 
-function POBlock({ col }: { col: POColumn }) {
+function POBlock({ col, highlightedId }: { col: POColumn; highlightedId: string | null }) {
   const sortedProvinsi = Array.from(col.provinsiMap.entries()).sort(([a], [b]) =>
     a.localeCompare(b),
   );
 
   return (
-    <div className="flex flex-col min-w-[380px] max-w-[460px] rounded-lg border border-border bg-card overflow-hidden shrink-0">
+    <div
+      id={`po-block-${col.poName}`}
+      className="flex flex-col min-w-[380px] max-w-[460px] rounded-lg border border-border bg-card overflow-hidden shrink-0"
+    >
       {/* PO Header */}
       <div className="bg-slate-700/80 px-3 py-2">
         <div className="flex items-center justify-between gap-2">
@@ -266,7 +273,7 @@ function POBlock({ col }: { col: POColumn }) {
                   </td>
                 </tr>
                 {rows.map((r) => (
-                  <SiteTableRow key={r.id} record={r} />
+                  <SiteTableRow key={r.id} record={r} highlighted={highlightedId === r.id} />
                 ))}
               </>
             ))}
@@ -279,19 +286,76 @@ function POBlock({ col }: { col: POColumn }) {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function RecapTable({ records, poList }: RecapTableProps) {
-  const columns = groupByPO(records, poList);
+export function RecapTable({ records, poList, initialHighlightId }: RecapTableProps) {
+  const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set());
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const columns = useMemo(() => groupByPO(records, poList), [records, poList]);
+  const allPONames = useMemo(() => columns.map((c) => c.poName), [columns]);
+
+  const displayedColumns =
+    selectedPOs.size === 0 ? columns : columns.filter((col) => selectedPOs.has(col.poName));
+
+  // On mount (or when records load), scroll to + highlight the target row from cross-date navigation
+  useEffect(() => {
+    if (!initialHighlightId || records.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const rowEl = document.getElementById(`row-${initialHighlightId}`);
+      if (rowEl) {
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      setHighlightedId(initialHighlightId);
+      const clearTimer = setTimeout(() => setHighlightedId(null), 3000);
+      return () => clearTimeout(clearTimer);
+    }, 120);
+
+    return () => clearTimeout(timer);
+  }, [initialHighlightId, records.length]);
 
   return (
     <div className="space-y-3">
+      {/* ── Filter by PO ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button
+          size="sm"
+          variant={selectedPOs.size === 0 ? 'default' : 'outline'}
+          className="h-6 text-xs px-2.5"
+          onClick={() => setSelectedPOs(new Set())}
+        >
+          Semua
+        </Button>
+        {allPONames.map((name) => (
+          <Button
+            key={name}
+            size="sm"
+            variant={selectedPOs.has(name) ? 'default' : 'outline'}
+            className="h-6 text-xs px-2.5"
+            onClick={() => {
+              const next = new Set(selectedPOs);
+              if (next.has(name)) next.delete(name);
+              else next.add(name);
+              setSelectedPOs(next);
+            }}
+          >
+            {name}
+          </Button>
+        ))}
+        <span className="text-xs text-muted-foreground ml-1">
+          Menampilkan {selectedPOs.size === 0 ? allPONames.length : selectedPOs.size} dari{' '}
+          {allPONames.length} PO
+        </span>
+      </div>
+
+      {/* Info line */}
       <p className="text-xs text-muted-foreground">
-        {columns.length} PO · {records.length} TT
+        {displayedColumns.length} PO · {records.length} TT
       </p>
 
       {/* Horizontal scroll grid */}
       <div className="flex gap-3 overflow-x-auto pb-3" style={{ minHeight: '200px' }}>
-        {columns.map((col) => (
-          <POBlock key={col.poName} col={col} />
+        {displayedColumns.map((col) => (
+          <POBlock key={col.poName} col={col} highlightedId={highlightedId} />
         ))}
       </div>
     </div>

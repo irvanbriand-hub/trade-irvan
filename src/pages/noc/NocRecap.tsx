@@ -1,15 +1,20 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useEffect } from 'react';
 import { format, addDays, subDays } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Camera, LayoutGrid, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Camera, LayoutGrid, Download, Search, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { useTTRecords } from '@/lib/noc/hooks/useTTRecords';
 import { usePOList } from '@/lib/noc/hooks/usePOList';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
 import { normalizeDate } from '@/lib/noc/queries';
+import { getPO } from '@/lib/noc/classifiers';
 import { RecapTable } from '@/components/noc/RecapTable';
 import { RecapCaptureMode } from '@/components/noc/RecapCaptureMode';
+import { ClosedTodayCaptureMode } from '@/components/noc/ClosedTodayCaptureMode';
+import type { ClosedTodayKPI } from '@/components/noc/ClosedTodayCaptureMode';
 import type { TTRecordDB } from '@/lib/noc/types';
 
 function formatDateLabel(date: Date): string {
@@ -20,11 +25,23 @@ function toFilterKey(date: Date): string {
   return format(date, 'dd/MM/yyyy');
 }
 
+/** Parse DD/MM/YYYY → Date */
+function parseDMY(key: string): Date {
+  const [dd, mm, yyyy] = key.split('/').map(Number);
+  return new Date(yyyy, mm - 1, dd);
+}
+
 function getCloseType(r: TTRecordDB): 'noc' | 'om' | 'om-visit' | null {
   if (r.status !== 'CLOSED') return null;
   if (r.down_time <= 3) return 'noc';
   if ((r.tiket_internal ?? '').toUpperCase().includes('KUNJUNGAN')) return 'om-visit';
   return 'om';
+}
+
+function agingColor(days: number): string {
+  if (days >= 30) return 'text-red-400';
+  if (days >= 14) return 'text-amber-400';
+  return 'text-muted-foreground';
 }
 
 interface KPIData {
@@ -60,11 +77,9 @@ function computeKPI(allRecords: TTRecordDB[], filterKey: string): KPIData {
   };
 }
 
-// ─── KPI Cards (light theme, untuk capture) ──────────────────────────────────
+// ─── KPI Cards — Daily Recap (light theme, untuk capture) ────────────────────
 
 function KPICaptureCards({ kpi }: { kpi: KPIData }) {
-  // Border top semua pakai slate — clean & profesional
-  // Nilai pakai warna semantic muted hanya untuk angka yang perlu perhatian
   const row1 = [
     { label: 'Total TT',     value: kpi.totalTT,     valueColor: '#1e293b' },
     { label: 'Open',         value: kpi.open,         valueColor: '#b91c1c' },
@@ -113,12 +128,104 @@ function KPICaptureCards({ kpi }: { kpi: KPIData }) {
   );
 }
 
+// ─── KPI Cards — Closed Today (2 section, light theme, untuk capture) ───────
+
+function ClosedTodayKPICards({ kpi }: { kpi: ClosedTodayKPI }) {
+  const resColor =
+    kpi.resolutionRate >= 80 ? '#15803d' : kpi.resolutionRate >= 50 ? '#d97706' : '#dc2626';
+  const todayLabel = format(new Date(), 'dd/MM/yyyy');
+
+  type CardItem = { label: string; value: string; valueColor: string; subtitle?: string };
+
+  const renderCards = (items: CardItem[], cols: number) => (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(${cols}, 1fr)`,
+      gap: '6px',
+      alignItems: 'start',
+    }}>
+      {items.map((item) => (
+        <div
+          key={item.label + (item.subtitle ?? '')}
+          style={{
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderTop: '3px solid #334155',
+            borderRadius: '6px',
+            padding: '10px 8px',
+            textAlign: 'center' as const,
+          }}
+        >
+          <div style={{ fontSize: '11px', color: '#475569', textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontWeight: '700', marginBottom: '4px', lineHeight: '1.3' }}>
+            {item.label}
+          </div>
+          <div style={{ fontSize: '30px', fontWeight: '700', color: item.valueColor, lineHeight: '1' }}>
+            {item.value}
+          </div>
+          {item.subtitle && (
+            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '3px' }}>
+              {item.subtitle}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const section1: CardItem[] = [
+    { label: 'Total Closed',   value: String(kpi.totalClosed),  valueColor: '#15803d', subtitle: 'Aging ≥ 3 hari' },
+    { label: 'Close NOC',      value: String(kpi.closeNOC),     valueColor: '#0891b2', subtitle: '≤ 2 hari' },
+    { label: 'Close Visit',    value: String(kpi.closeVisit),   valueColor: '#7c3aed', subtitle: 'Kunjungan fisik' },
+    { label: 'Overdue Closed', value: String(kpi.overdueGte8),  valueColor: '#ea580c', subtitle: '≥ 8 hari' },
+    { label: 'Overdue Closed', value: String(kpi.overdueGte30), valueColor: '#dc2626', subtitle: '≥ 30 hari' },
+  ];
+
+  const section2: CardItem[] = [
+    { label: 'Target Hari Ini',      value: String(kpi.totalTargetHariIni), valueColor: '#1e293b',  subtitle: 'Semua status' },
+    { label: 'Closed Hari Ini',      value: String(kpi.closedHariIni),      valueColor: '#15803d',  subtitle: 'Target hari ini' },
+    { label: 'Resolution Rate Today',value: `${kpi.resolutionRate}%`,        valueColor: resColor,   subtitle: `${kpi.closedHariIni} / ${kpi.totalTargetHariIni}` },
+  ];
+
+  const sectionLabel = (text: string) => (
+    <div style={{ fontSize: '9px', fontWeight: '700', textTransform: 'uppercase' as const, letterSpacing: '0.08em', color: '#6c757d', marginBottom: '6px' }}>
+      {text}
+    </div>
+  );
+
+  return (
+    <div style={{ backgroundColor: '#f8f9fa', borderBottom: '2px solid #cbd5e1' }}>
+      {/* Section 1 — Keseluruhan Closed */}
+      <div style={{ padding: '10px 12px 6px' }}>
+        {sectionLabel('Keseluruhan Closed')}
+        {renderCards(section1, 5)}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: '1px', backgroundColor: '#dee2e6', margin: '0 12px' }} />
+
+      {/* Section 2 — Hari Ini */}
+      <div style={{ padding: '6px 12px 10px' }}>
+        {sectionLabel(`Hari Ini — ${todayLabel}`)}
+        {renderCards(section2, 3)}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function NocRecap() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [mode, setMode] = useState<'view' | 'capture'>('view');
+  const [captureTab, setCaptureTab] = useState<'daily' | 'closed-today'>('daily');
   const combinedRef = useRef<HTMLDivElement>(null);
+  const closedTodayRef = useRef<HTMLDivElement>(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [pendingHighlight, setPendingHighlight] = useState<string | null>(null);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
 
   const { data: allRecords = [], isLoading } = useTTRecords();
   const { data: poList = [] } = usePOList();
@@ -134,13 +241,89 @@ export default function NocRecap() {
   const openCount = filtered.filter((r) => r.status === 'OPEN').length;
   const closedCount = filtered.filter((r) => r.status === 'CLOSED').length;
 
+  // Closed Today data
+  // Base filter: SEMUA CLOSED + down_time >= 3 (tanpa filter tanggal)
+  const closedTodayRecords = useMemo(
+    () => allRecords.filter((r) => r.status === 'CLOSED' && r.down_time >= 3),
+    [allRecords],
+  );
+  const closedTodayKPI: ClosedTodayKPI = useMemo(() => {
+    // Section 2 pakai actual today (bukan selectedDate)
+    const todayKey = toFilterKey(new Date());
+    const todayRecords = allRecords.filter(
+      (r) => normalizeDate(r.target_online_original ?? '') === todayKey,
+    );
+    const closedHariIni = todayRecords.filter(
+      (r) => r.status === 'CLOSED' && r.down_time >= 3,
+    ).length;
+    return {
+      // Section 1 — Keseluruhan DB
+      totalClosed:        closedTodayRecords.length,
+      closeNOC:           allRecords.filter((r) => r.status === 'CLOSED' && r.down_time <= 2).length,
+      closeVisit:         closedTodayRecords.filter((r) =>
+                            (r.tiket_internal ?? '').toUpperCase().includes('KUNJUNGAN')).length,
+      overdueGte8:        closedTodayRecords.filter((r) => r.down_time >= 8).length,
+      overdueGte30:       closedTodayRecords.filter((r) => r.down_time >= 30).length,
+      // Section 2 — Hari Ini
+      totalTargetHariIni: todayRecords.length,
+      closedHariIni,
+      resolutionRate:     todayRecords.length > 0
+                            ? Math.round((closedHariIni / todayRecords.length) * 100)
+                            : 0,
+    };
+  }, [allRecords, closedTodayRecords]);
+
   const kpi = useMemo(() => computeKPI(allRecords, filterKey), [allRecords, filterKey]);
+
+  // Reset captureTab ke 'daily' saat mode berubah ke view
+  useEffect(() => {
+    if (mode === 'view') setCaptureTab('daily');
+  }, [mode]);
+
+  // Search across ALL records (all dates)
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase();
+    return allRecords
+      .filter((r) => r.site_name.toLowerCase().includes(q))
+      .slice(0, 15)
+      .map((r) => {
+        const po = getPO(r.provinsi ?? '', r.kabupaten ?? '', poList);
+        const recordDate = normalizeDate(r.target_online_original ?? '');
+        const effectiveTarget = r.is_manually_edited
+          ? r.target_online_edited ?? r.target_online_original ?? ''
+          : r.target_online_original ?? '';
+        return { record: r, poName: po?.name ?? '— Tidak Terpetakan', recordDate, effectiveTarget };
+      });
+  }, [searchQuery, allRecords, poList]);
+
+  // Close search dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  function handleSearchResultClick(recordId: string, recordDate: string) {
+    setSearchQuery('');
+    setSearchOpen(false);
+    setPendingHighlight(recordId);
+
+    if (recordDate && recordDate !== filterKey) {
+      setSelectedDate(parseDMY(recordDate));
+    }
+
+    setTimeout(() => setPendingHighlight(null), 4500);
+  }
 
   async function handleDownloadCombined() {
     const el = combinedRef.current;
     if (!el) return;
 
-    // Temporarily bring on-screen so html2canvas can render it
     el.style.left = '0';
     el.style.position = 'fixed';
     el.style.zIndex = '-1';
@@ -159,6 +342,37 @@ export default function NocRecap() {
       });
       const link = document.createElement('a');
       link.download = `noc-recap-${filterKey.replace(/\//g, '-')}.png`;
+      link.href = canvas.toDataURL('image/png', 1.0);
+      link.click();
+    } finally {
+      el.style.left = '-9999px';
+      el.style.position = 'absolute';
+      el.style.zIndex = 'auto';
+    }
+  }
+
+  async function handleDownloadClosedToday() {
+    const el = closedTodayRef.current;
+    if (!el) return;
+
+    el.style.left = '0';
+    el.style.position = 'fixed';
+    el.style.zIndex = '-1';
+
+    try {
+      const canvas = await html2canvas(el, {
+        backgroundColor: '#ffffff',
+        scale: 3,
+        useCORS: true,
+        allowTaint: true,
+        width: el.scrollWidth,
+        height: el.scrollHeight,
+        windowWidth: 1400,
+        logging: false,
+        imageTimeout: 0,
+      });
+      const link = document.createElement('a');
+      link.download = `noc-closed-today-${format(selectedDate, 'yyyy-MM-dd')}.png`;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } finally {
@@ -239,15 +453,139 @@ export default function NocRecap() {
             </Button>
           </div>
 
-          {/* Download combined — only in capture mode */}
-          {mode === 'capture' && filtered.length > 0 && (
-            <Button size="sm" className="h-8 gap-1.5" onClick={handleDownloadCombined}>
-              <Download className="h-3.5 w-3.5" />
-              Download PNG
-            </Button>
+          {/* Download PNG — muncul saat capture, sesuai tab aktif */}
+          {mode === 'capture' && (
+            <>
+              {captureTab === 'daily' && filtered.length > 0 && (
+                <Button size="sm" className="h-8 gap-1.5" onClick={handleDownloadCombined}>
+                  <Download className="h-3.5 w-3.5" />
+                  Download PNG
+                </Button>
+              )}
+              {captureTab === 'closed-today' && closedTodayRecords.length > 0 && (
+                <Button size="sm" className="h-8 gap-1.5" onClick={handleDownloadClosedToday}>
+                  <Download className="h-3.5 w-3.5" />
+                  Download PNG
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
+
+      {/* ── Capture tab switcher — hanya saat mode capture ── */}
+      {mode === 'capture' && filtered.length > 0 && (
+        <div className="flex rounded-md border border-border overflow-hidden w-fit">
+          <Button
+            variant={captureTab === 'daily' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-8 rounded-none gap-1.5 border-0 text-xs"
+            onClick={() => setCaptureTab('daily')}
+          >
+            📋 Daily Recap
+          </Button>
+          <Button
+            variant={captureTab === 'closed-today' ? 'default' : 'ghost'}
+            size="sm"
+            className="h-8 rounded-none gap-1.5 border-0 border-l border-border text-xs"
+            onClick={() => setCaptureTab('closed-today')}
+          >
+            ✅ Closed Today
+          </Button>
+        </div>
+      )}
+
+      {/* ── Search Lokasi (global, semua tanggal) — view mode only ── */}
+      {mode === 'view' && !isLoading && allRecords.length > 0 && (
+        <div ref={searchWrapperRef} className="relative w-80">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchOpen(e.target.value.trim().length > 0);
+              }}
+              onFocus={() => {
+                if (searchQuery.trim()) setSearchOpen(true);
+              }}
+              placeholder="Cari lokasi di semua tanggal..."
+              className="h-8 pl-8 pr-8 text-xs"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchOpen(false);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Dropdown results */}
+          {searchOpen && searchQuery.trim() && (
+            <div className="absolute top-full mt-1 left-0 w-[520px] rounded-md border border-border bg-popover shadow-lg z-50 overflow-hidden">
+              {searchResults.length > 0 ? (
+                <>
+                  <div className="max-h-80 overflow-y-auto">
+                    {searchResults.map(({ record, poName, recordDate, effectiveTarget }) => {
+                      const isOtherDate = recordDate !== filterKey;
+                      return (
+                        <button
+                          key={record.id}
+                          className="w-full px-3 py-2 flex items-center gap-3 hover:bg-muted/60 text-left border-b border-border/30 last:border-0 transition-colors"
+                          onClick={() => handleSearchResultClick(record.id, recordDate)}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-foreground truncate">
+                              {record.site_name}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground truncate">
+                              👤 {poName}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={['text-[10px] font-medium', isOtherDate ? 'text-blue-400' : 'text-muted-foreground'].join(' ')}>
+                              {recordDate || '—'}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {effectiveTarget !== recordDate ? effectiveTarget || '' : ''}
+                            </span>
+                            {record.status === 'CLOSED' ? (
+                              <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30 text-[9px] px-1 py-0 h-4">
+                                CLOSED
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-red-500/20 text-red-400 border-red-500/30 text-[9px] px-1 py-0 h-4">
+                                OPEN
+                              </Badge>
+                            )}
+                            <span className={`text-[10px] ${agingColor(record.down_time)}`}>
+                              {record.down_time}h
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {searchResults.length === 15 && (
+                    <p className="px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/20 border-t border-border/30">
+                      Menampilkan 15 hasil teratas
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="px-3 py-3 text-xs text-muted-foreground text-center">
+                  Tidak ada lokasi ditemukan
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Content */}
       {isLoading ? (
@@ -263,9 +601,13 @@ export default function NocRecap() {
           </p>
         </div>
       ) : mode === 'view' ? (
-        <RecapTable records={filtered} poList={poList} />
-      ) : (
-        /* Capture mode — show preview of the rekap table */
+        <RecapTable
+          key={filterKey}
+          records={filtered}
+          poList={poList}
+          initialHighlightId={pendingHighlight}
+        />
+      ) : captureTab === 'daily' ? (
         <div className="overflow-x-auto pb-3">
           <RecapCaptureMode
             records={filtered}
@@ -274,9 +616,28 @@ export default function NocRecap() {
             lastUploadTime={lastUploadTime}
           />
         </div>
+      ) : (
+        /* Closed Today preview */
+        <div className="overflow-x-auto pb-3">
+          {closedTodayRecords.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <p className="text-2xl mb-2">✅</p>
+              <p className="text-sm font-medium">Belum ada TT yang closed</p>
+              <p className="text-xs mt-1">Pada tanggal {filterKey} belum ada TT berstatus CLOSED</p>
+            </div>
+          ) : (
+            <ClosedTodayCaptureMode
+              records={closedTodayRecords}
+              poList={poList}
+              selectedDate={filterKey}
+              lastUploadTime={lastUploadTime}
+              kpi={closedTodayKPI}
+            />
+          )}
+        </div>
       )}
 
-      {/* ── Hidden combined capture div (KPI + Rekap) ── */}
+      {/* ── Hidden div — Daily Recap (KPI + Recap) ── */}
       {filtered.length > 0 && (
         <div
           ref={combinedRef}
@@ -291,15 +652,38 @@ export default function NocRecap() {
             top: 0,
           }}
         >
-          {/* KPI Cards */}
           <KPICaptureCards kpi={kpi} />
-
-          {/* Rekap Table */}
           <RecapCaptureMode
             records={filtered}
             poList={poList}
             selectedDate={filterKey}
             lastUploadTime={lastUploadTime}
+          />
+        </div>
+      )}
+
+      {/* ── Hidden div — Closed Today (KPI + Table) ── */}
+      {closedTodayRecords.length > 0 && (
+        <div
+          ref={closedTodayRef}
+          style={{
+            width: '1400px',
+            backgroundColor: '#ffffff',
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '11px',
+            color: '#000',
+            position: 'absolute',
+            left: '-9999px',
+            top: 0,
+          }}
+        >
+          <ClosedTodayKPICards kpi={closedTodayKPI} />
+          <ClosedTodayCaptureMode
+            records={closedTodayRecords}
+            poList={poList}
+            selectedDate={filterKey}
+            lastUploadTime={lastUploadTime}
+            kpi={closedTodayKPI}
           />
         </div>
       )}
