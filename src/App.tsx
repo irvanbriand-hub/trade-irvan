@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { type ReactNode } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import Dashboard from "./pages/Dashboard";
@@ -27,26 +28,34 @@ import AraHunter from "./pages/AraHunter";
 import JendralHunter from "./pages/JendralHunter";
 import BackupRestore from "./pages/BackupRestore";
 import NocLayout from "./pages/noc/NocLayout";
-
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-function AuthenticatedApp() {
+// Spinner reusable
+function Spinner() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
+
+// Hanya untuk /login — redirect ke /noc jika sudah login
+function PublicOnlyRoute({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (user) return <Navigate to="/noc" replace />;
+  return <>{children}</>;
+}
+
+// Semua route trading — redirect ke /login jika belum login
+function ProtectedApp() {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Auth />;
-  }
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/login" replace />;
 
   return (
     <AppLayout>
@@ -71,8 +80,6 @@ function AuthenticatedApp() {
         <Route path="/ara-hunter" element={<AraHunter />} />
         <Route path="/jendral-hunter" element={<JendralHunter />} />
         <Route path="/backup" element={<BackupRestore />} />
-        <Route path="/noc/*" element={<NocLayout />} />
-
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
@@ -86,7 +93,19 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <AuthenticatedApp />
+          <Routes>
+            {/* Default → NOC (public) */}
+            <Route path="/" element={<Navigate to="/noc" replace />} />
+
+            {/* PUBLIC: NOC — tidak perlu login */}
+            <Route path="/noc/*" element={<NocLayout />} />
+
+            {/* PUBLIC: Login — redirect ke /noc jika sudah login */}
+            <Route path="/login" element={<PublicOnlyRoute><Auth /></PublicOnlyRoute>} />
+
+            {/* PROTECTED: semua route trading */}
+            <Route path="/*" element={<ProtectedApp />} />
+          </Routes>
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

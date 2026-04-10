@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useTTRecords } from '@/lib/noc/hooks/useTTRecords';
 import { usePOList } from '@/lib/noc/hooks/usePOList';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
-import { normalizeDate, getEffectiveTargetOnlineDB } from '@/lib/noc/queries';
+import { normalizeDate } from '@/lib/noc/queries';
 import { RecapTable } from '@/components/noc/RecapTable';
 import { RecapCaptureMode } from '@/components/noc/RecapCaptureMode';
 import type { TTRecordDB } from '@/lib/noc/types';
@@ -48,14 +48,14 @@ function computeKPI(allRecords: TTRecordDB[], filterKey: string): KPIData {
     closeNOC: allRecords.filter((r) => getCloseType(r) === 'noc').length,
     closeOM: allRecords.filter((r) => getCloseType(r) === 'om').length,
     closeOMVisit: allRecords.filter((r) => getCloseType(r) === 'om-visit').length,
-    overdueGt8: allRecords.filter((r) => r.status === 'OPEN' && r.down_time > 8).length,
-    overdueGt30: allRecords.filter((r) => r.status === 'OPEN' && r.down_time > 30).length,
+    overdueGt8: allRecords.filter((r) => r.status === 'OPEN' && r.down_time >= 8).length,
+    overdueGt30: allRecords.filter((r) => r.status === 'OPEN' && r.down_time >= 30).length,
     targetOnlineToday: allRecords.filter(
-      (r) => normalizeDate(getEffectiveTargetOnlineDB(r)) === filterKey,
+      (r) => normalizeDate(r.target_online_original ?? '') === filterKey,
     ).length,
     closeTargetToday: allRecords.filter(
       (r) =>
-        normalizeDate(getEffectiveTargetOnlineDB(r)) === filterKey && r.status === 'CLOSED',
+        normalizeDate(r.target_online_original ?? '') === filterKey && r.status === 'CLOSED',
     ).length,
   };
 }
@@ -69,8 +69,8 @@ function KPICaptureCards({ kpi }: { kpi: KPIData }) {
     { label: 'Total TT',     value: kpi.totalTT,     valueColor: '#1e293b' },
     { label: 'Open',         value: kpi.open,         valueColor: '#b91c1c' },
     { label: 'Closed',       value: kpi.closed,       valueColor: '#15803d' },
-    { label: 'Overdue >8h',  value: kpi.overdueGt8,   valueColor: '#c2410c' },
-    { label: 'Overdue >30h', value: kpi.overdueGt30,  valueColor: '#991b1b' },
+    { label: 'Overdue 8h',  value: kpi.overdueGt8,   valueColor: '#c2410c' },
+    { label: 'Overdue 30h', value: kpi.overdueGt30,  valueColor: '#991b1b' },
   ];
   const row2 = [
     { label: 'Close NOC',            value: kpi.closeNOC,          valueColor: '#1d4ed8' },
@@ -127,8 +127,8 @@ export default function NocRecap() {
   const filterKey = toFilterKey(selectedDate);
 
   const filtered = allRecords.filter((r) => {
-    const eff = normalizeDate(getEffectiveTargetOnlineDB(r));
-    return eff === filterKey;
+    const orig = normalizeDate(r.target_online_original ?? '');
+    return orig === filterKey;
   });
 
   const openCount = filtered.filter((r) => r.status === 'OPEN').length;

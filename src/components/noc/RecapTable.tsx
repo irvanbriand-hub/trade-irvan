@@ -93,7 +93,7 @@ function SiteTableRow({ record }: { record: TTRecordDB }) {
 
   function saveEdit() {
     updateRecord(
-      { id: record.id, target_online_edited: form.targetOnline, reschedule_note: form.rescheduleNote },
+      { id: record.id, ticket_id: record.ticket_id, target_online_edited: form.targetOnline, reschedule_note: form.rescheduleNote },
       { onSuccess: () => setEditing(false) },
     );
   }
@@ -159,9 +159,7 @@ function SiteTableRow({ record }: { record: TTRecordDB }) {
                 {record.site_name}
               </span>
               {isVisit && isClosed && (
-                <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[9px] px-1 py-0 h-3.5 shrink-0">
-                  VISIT
-                </Badge>
+                <span className="text-purple-400 text-[10px] font-bold shrink-0">[VISIT]</span>
               )}
               {record.is_manually_edited && (
                 <span className="text-[9px] text-muted-foreground shrink-0" title="Diedit manual">✏</span>

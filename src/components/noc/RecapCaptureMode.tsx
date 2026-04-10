@@ -148,12 +148,15 @@ const S = {
     alignItems: 'center' as const,
   },
   rescheduleCell: {
-    textAlign: 'center' as const,
     backgroundColor: '#FFF176',
     fontSize: '9px',
-    lineHeight: '1.3',
-    justifyContent: 'center' as const,
+    lineHeight: '1.4',
     flexDirection: 'column' as const,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    textAlign: 'center' as const,
+    padding: '3px 6px',
+    gap: '1px',
   },
 };
 
@@ -191,11 +194,23 @@ function RecapColumn({ groups }: { groups: POGroup[] }) {
                     const isClosed = r.status === 'CLOSED';
                     const effectiveTarget = getEffectiveTargetOnlineDB(r);
                     const isReschedule = !isClosed && !!r.reschedule_note;
+                    const isVisit = isClosed && (r.tiket_internal ?? '').toUpperCase().includes('KUNJUNGAN');
 
                     if (isClosed) {
                       return (
                         <div key={r.id} style={{ ...S.rowBase, textDecoration: 'line-through', color: '#FF0000' }}>
-                          <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
+                          <div style={{ ...S.cell, ...S.cellNameFlex }}>
+                            <span>{r.site_name}</span>
+                            {isVisit && (
+                              <span style={{
+                                marginLeft: '6px',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                color: '#7B1FA2',
+                                textDecoration: 'none',
+                              }}>[VISIT]</span>
+                            )}
+                          </div>
                           <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
                           <div style={{ ...S.cell, ...S.cellTarget }}>CLOSED</div>
                         </div>
@@ -204,12 +219,50 @@ function RecapColumn({ groups }: { groups: POGroup[] }) {
 
                     if (isReschedule) {
                       return (
-                        <div key={r.id} style={S.rowBase}>
-                          <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
-                          <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
-                          <div style={{ ...S.cell, ...S.cellTarget, ...S.rescheduleCell }}>
-                            <span>{r.reschedule_note}</span>
-                            {effectiveTarget && <span>({effectiveTarget})</span>}
+                        <div key={r.id} style={{
+                          display: 'table',
+                          width: '100%',
+                          borderBottom: '1px solid #eee',
+                          fontSize: '11px',
+                          color: '#000',
+                        }}>
+                          <div style={{
+                            display: 'table-cell',
+                            verticalAlign: 'middle',
+                            padding: '4px 8px',
+                          }}>
+                            <span>{r.site_name}</span>
+                            <span style={{
+                              marginLeft: '6px',
+                              fontSize: '10px',
+                              fontWeight: 'bold',
+                              color: '#D97706',
+                            }}>[RESCHEDULE]</span>
+                          </div>
+                          <div style={{
+                            display: 'table-cell',
+                            verticalAlign: 'middle',
+                            width: '95px',
+                            textAlign: 'center',
+                            padding: '4px 8px',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {r.down_time}
+                          </div>
+                          <div style={{
+                            display: 'table-cell',
+                            verticalAlign: 'middle',
+                            width: '110px',
+                            textAlign: 'center',
+                            backgroundColor: '#FFF176',
+                            fontSize: '9px',
+                            lineHeight: '1.4',
+                            padding: '3px 6px',
+                          }}>
+                            <div>{r.reschedule_note}</div>
+                            {effectiveTarget && (
+                              <div style={{ color: '#5D4037', fontWeight: 'bold' }}>({effectiveTarget})</div>
+                            )}
                           </div>
                         </div>
                       );

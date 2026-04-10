@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
-import { normalizeDate, getEffectiveTargetOnlineDB } from '@/lib/noc/queries';
+import { normalizeDate } from '@/lib/noc/queries';
 import type { TTRecordDB } from '@/lib/noc/types';
 
 interface KpiCardsProps {
@@ -28,14 +28,14 @@ export function KpiCards({ data }: KpiCardsProps) {
     const totalTT     = data.length;
     const open        = data.filter((r) => r.status === 'OPEN').length;
     const closed      = data.filter((r) => r.status === 'CLOSED').length;
-    const overdueGt8  = data.filter((r) => r.status === 'OPEN' && r.down_time > 8).length;
-    const overdueGt30 = data.filter((r) => r.status === 'OPEN' && r.down_time > 30).length;
+    const overdueGt8  = data.filter((r) => r.status === 'OPEN' && r.down_time >= 8).length;
+    const overdueGt30 = data.filter((r) => r.status === 'OPEN' && r.down_time >= 30).length;
     const closeNOC    = data.filter((r) => getCloseType(r) === 'noc').length;
     const closeOM     = data.filter((r) => getCloseType(r) === 'om').length;
     const closeVisit  = data.filter((r) => getCloseType(r) === 'om-visit').length;
-    const targetToday = data.filter((r) => normalizeDate(getEffectiveTargetOnlineDB(r)) === today).length;
+    const targetToday = data.filter((r) => normalizeDate(r.target_online_original ?? '') === today).length;
     const closeTarget = data.filter(
-      (r) => normalizeDate(getEffectiveTargetOnlineDB(r)) === today && r.status === 'CLOSED',
+      (r) => normalizeDate(r.target_online_original ?? '') === today && r.status === 'CLOSED',
     ).length;
 
     return {
@@ -43,8 +43,8 @@ export function KpiCards({ data }: KpiCardsProps) {
         { label: 'Total TT',     value: totalTT,     color: 'text-foreground' },
         { label: 'Open',         value: open,         color: 'text-red-400' },
         { label: 'Closed',       value: closed,       color: 'text-green-400' },
-        { label: 'Overdue >8h',  value: overdueGt8,   color: 'text-orange-400' },
-        { label: 'Overdue >30h', value: overdueGt30,  color: 'text-red-600' },
+        { label: 'Overdue 8h',  value: overdueGt8,   color: 'text-orange-400' },
+        { label: 'Overdue 30h', value: overdueGt30,  color: 'text-red-600' },
       ],
       row2: [
         { label: 'Close NOC',            value: closeNOC,    color: 'text-blue-400' },

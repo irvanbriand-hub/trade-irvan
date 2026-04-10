@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { fetchTTRecords, updateTTRecordEdit } from '../queries';
 import type { TTRecordDB } from '../types';
 
@@ -14,11 +15,12 @@ export function useTTRecords() {
 
 export function useUpdateTTRecord() {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation<void, Error, { id: string; ticket_id: string; target_online_edited: string; reschedule_note: string }>({
     mutationFn: updateTTRecordEdit,
     onMutate: async (payload) => {
       await qc.cancelQueries({ queryKey: QK });
       const prev = qc.getQueryData<TTRecordDB[]>(QK);
+      // Optimistic update — langsung tampil sebelum konfirmasi DB
       qc.setQueryData<TTRecordDB[]>(QK, (old) =>
         (old ?? []).map((r) =>
           r.id === payload.id
@@ -28,8 +30,13 @@ export function useUpdateTTRecord() {
       );
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onSuccess: () => {
+      toast.success('Reschedule disimpan');
+    },
+    onError: (err, _vars, ctx) => {
       if (ctx?.prev) qc.setQueryData(QK, ctx.prev);
+      console.error('[useUpdateTTRecord] onError:', err);
+      toast.error('Gagal menyimpan. Coba lagi.');
     },
     onSettled: () => qc.invalidateQueries({ queryKey: QK }),
   });

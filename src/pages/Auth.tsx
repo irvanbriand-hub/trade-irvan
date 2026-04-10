@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,11 @@ export default function Auth() {
             >
               {isLogin ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk"}
             </button>
+          </div>
+          <div className="mt-3 text-center">
+            <Link to="/noc" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              ← Kembali ke NOC Dashboard
+            </Link>
           </div>
         </CardContent>
       </Card>

@@ -194,21 +194,34 @@ export async function fetchTTRecords(): Promise<TTRecordDB[]> {
 
 /**
  * Update target online + reschedule note (edit manual).
+ * Pakai (supabase as any) karena tt_records belum ada di generated Database types.
+ * Filter by ticket_id (text) — lebih reliable dari id (UUID).
  */
 export async function updateTTRecordEdit(payload: {
-  id: string;
+  id: string;         // untuk cache update (optimistic)
+  ticket_id: string;  // untuk DB filter
   target_online_edited: string;
   reschedule_note: string;
 }): Promise<void> {
+  // tt_records belum ada di generated types, suppress TS error di .from() saja
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore
   const { error } = await supabase
     .from('tt_records')
     .update({
-      target_online_edited: payload.target_online_edited,
-      reschedule_note: payload.reschedule_note,
+      target_online_edited: payload.target_online_edited || null,
+      reschedule_note: payload.reschedule_note || null,
       is_manually_edited: true,
     })
-    .eq('id', payload.id);
-  if (error) throw error;
+    .eq('ticket_id', payload.ticket_id);
+
+  if (error) {
+    console.error('[updateTTRecordEdit] code:', error.code);
+    console.error('[updateTTRecordEdit] message:', error.message);
+    console.error('[updateTTRecordEdit] details:', error.details);
+    console.error('[updateTTRecordEdit] hint:', error.hint);
+    throw error;
+  }
 }
 
 /**

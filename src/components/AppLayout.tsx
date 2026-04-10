@@ -310,6 +310,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="h-2 w-2 rounded-full bg-gain animate-pulse-glow" />
               <span>Market Open</span>
             </div>
+            {user && (
+              <span className="hidden lg:block text-xs text-muted-foreground truncate max-w-[160px]">
+                {user.email}
+              </span>
+            )}
             <Button
               variant="ghost"
               size="icon"

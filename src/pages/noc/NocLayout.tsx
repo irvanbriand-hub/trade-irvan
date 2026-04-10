@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
-import { Trash2 } from 'lucide-react';
+import { Routes, Route, Navigate, NavLink, Link, useLocation } from 'react-router-dom';
+import { Trash2, BarChart3 } from 'lucide-react';
 import { NOCProvider } from '@/lib/noc/hooks/useNOC';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
+import { useAuth } from '@/hooks/useAuth';
 import { TsvUploader } from '@/components/noc/TsvUploader';
 import {
   AlertDialog,
@@ -97,6 +98,18 @@ function ResetDataButton() {
   );
 }
 
+function TradeJournalButton() {
+  const { user } = useAuth();
+  return (
+    <Button variant="outline" size="sm" className="gap-1.5" asChild>
+      <Link to={user ? '/journal' : '/login'}>
+        <BarChart3 className="h-3.5 w-3.5" />
+        {user ? 'Trade Journal' : 'Login ke Trade Journal'}
+      </Link>
+    </Button>
+  );
+}
+
 function NocInner() {
   const { pathname } = useLocation();
   const isPOPage = pathname.endsWith('/po');
@@ -112,7 +125,10 @@ function NocInner() {
             <p className="text-sm text-muted-foreground">Monitoring trouble ticket jaringan</p>
           </div>
         </div>
-        <ResetDataButton />
+        <div className="flex items-center gap-2">
+          <TradeJournalButton />
+          <ResetDataButton />
+        </div>
       </div>
 
       {/* TSV Uploader — hidden on PO page */}

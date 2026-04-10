@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react';
 import { format } from 'date-fns';
+import { useQueryClient } from '@tanstack/react-query';
 import { parseTSV } from '../tsvParser';
 import { computeSummary } from '../classifiers';
 import { saveUploadHistory, mergeTSVToSupabase, resetTTRecords } from '../queries';
@@ -32,6 +33,7 @@ export function NOCProvider({ children }: { children: ReactNode }) {
   const [summary, setSummary] = useState<NOCSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
+  const qc = useQueryClient();
 
   const loadTSV = useCallback(async (raw: string, poList: PO[], date: string) => {
     setIsLoading(true);
@@ -47,11 +49,14 @@ export function NOCProvider({ children }: { children: ReactNode }) {
       setMergeResult(result);
       setLastUploadTime(format(new Date(), 'HH:mm'));
 
+      // Invalidate tt_records cache agar Recap page langsung reflect data baru
+      qc.invalidateQueries({ queryKey: ['noc', 'tt_records'] });
+
       saveUploadHistory(date, computed).catch(() => {});
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [qc]);
 
   const clearData = useCallback(() => {
     setRawData([]);
