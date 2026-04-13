@@ -183,7 +183,7 @@ export default async function handler(req: any, res: any) {
   if (!message) return res.status(200).end();
 
   const chatId = message.chat?.id?.toString();
-  const allowedChatId = process.env.TELEGRAM_CHAT_ID;
+  const allowedChatId = process.env.TELEGRAM_CHAT_ID?.trim();
   const text: string = message.text || '';
 
   if (chatId !== allowedChatId) return res.status(200).end();
