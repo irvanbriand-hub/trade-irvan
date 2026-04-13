@@ -38,7 +38,8 @@ export function parseTSV(raw: string, poList: PO[]): TTRecord[] {
   return dataLines
     .filter((line) => line.trim())
     .map((line): TTRecord | null => {
-      const cols = line.replace(/\r$/, '').split('\t');
+      const cols = line.trimEnd().split('\t').map(c => c.trim());
+      if (cols.length < 4) return null;
 
       const tiketInternal = cols[0]?.trim() ?? '';
       const ticketId = cols[1]?.trim() ?? '';

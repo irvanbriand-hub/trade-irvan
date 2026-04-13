@@ -1,6 +1,14 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { NOCSummary, TTRecord, MergeResult, TTRecordDB } from './types';
 
+/** Konvert DD/M/YYYY atau DD/MM/YYYY ke YYYY-MM-DD untuk PostgreSQL. */
+function toISODate(dateStr: string): string {
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return dateStr;
+  const [d, m, y] = parts;
+  return `${y.padStart(4, '20')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
+
 /**
  * Insert ringkasan upload harian ke tabel tt_uploads.
  * Dipanggil setelah TSV berhasil di-parse dan diproses.
@@ -10,7 +18,7 @@ export async function saveUploadHistory(
   summary: NOCSummary,
 ): Promise<void> {
   const { error } = await supabase.from('tt_uploads').insert({
-    upload_date: uploadDate,
+    upload_date: toISODate(uploadDate),
     total_tt: summary.totalTT,
     total_open: summary.totalOpen,
     total_closed: summary.totalClosed,
@@ -98,7 +106,7 @@ export async function mergeTSVToSupabase(
         detail_prob: r.detailProb || null,
         note_original: r.note || null,
         teknis_nt: r.teknisNT || null,
-        upload_date: uploadDate,
+        upload_date: toISODate(uploadDate),
         is_manually_edited: false,
       })),
     );
@@ -125,7 +133,7 @@ export async function mergeTSVToSupabase(
         detail_prob: r.detailProb || null,
         note_original: r.note || null,
         teknis_nt: r.teknisNT || null,
-        upload_date: uploadDate,
+        upload_date: toISODate(uploadDate),
       })
       .eq('ticket_id', r.ticketId);
     if (error) throw error;
@@ -150,7 +158,7 @@ export async function mergeTSVToSupabase(
         detail_prob: r.detailProb || null,
         note_original: r.note || null,
         teknis_nt: r.teknisNT || null,
-        upload_date: uploadDate,
+        upload_date: toISODate(uploadDate),
       })
       .eq('ticket_id', r.ticketId);
     if (error) throw error;
