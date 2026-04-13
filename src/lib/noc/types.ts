@@ -101,6 +101,9 @@ export interface TTRecordDB {
 export interface MergeResult {
   inserted: number;
   updated: number;
+  updatedFull: number;
+  updatedProtected: number;
+  statusChanged: number;
   unchanged: number;
   totalInDB: number;
 }

@@ -19,6 +19,7 @@ interface NOCContextValue {
   summary: NOCSummary | null;
   isLoading: boolean;
   mergeResult: MergeResult | null;
+  loadFromRecords: (records: TTRecord[], date: string) => Promise<void>;
   loadTSV: (raw: string, poList: PO[], date: string) => Promise<void>;
   clearData: () => void;
   resetData: () => Promise<void>;
@@ -35,17 +36,16 @@ export function NOCProvider({ children }: { children: ReactNode }) {
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
   const qc = useQueryClient();
 
-  const loadTSV = useCallback(async (raw: string, poList: PO[], date: string) => {
+  const loadFromRecords = useCallback(async (records: TTRecord[], date: string) => {
     setIsLoading(true);
     setMergeResult(null);
     try {
-      const parsed = parseTSV(raw, poList);
-      const computed = computeSummary(parsed);
-      setRawData(parsed);
+      const computed = computeSummary(records);
+      setRawData(records);
       setUploadDate(date);
       setSummary(computed);
 
-      const result = await mergeTSVToSupabase(parsed, date);
+      const result = await mergeTSVToSupabase(records, date);
       setMergeResult(result);
       setLastUploadTime(format(new Date(), 'HH:mm'));
 
@@ -57,6 +57,11 @@ export function NOCProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   }, [qc]);
+
+  const loadTSV = useCallback(async (raw: string, poList: PO[], date: string) => {
+    const parsed = parseTSV(raw, poList);
+    await loadFromRecords(parsed, date);
+  }, [loadFromRecords]);
 
   const clearData = useCallback(() => {
     setRawData([]);
@@ -71,7 +76,7 @@ export function NOCProvider({ children }: { children: ReactNode }) {
   }, [clearData]);
 
   return (
-    <NOCContext.Provider value={{ rawData, uploadDate, lastUploadTime, summary, isLoading, mergeResult, loadTSV, clearData, resetData }}>
+    <NOCContext.Provider value={{ rawData, uploadDate, lastUploadTime, summary, isLoading, mergeResult, loadFromRecords, loadTSV, clearData, resetData }}>
       {children}
     </NOCContext.Provider>
   );

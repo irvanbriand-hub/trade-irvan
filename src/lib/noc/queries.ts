@@ -52,6 +52,13 @@ export function getEffectiveTargetOnline(record: {
  * - Record lama (is_manually_edited=false): UPDATE semua field TSV + target_online_edited
  * - Record lama (is_manually_edited=true): UPDATE field TSV saja, JANGAN ubah target_online_edited & reschedule_note
  */
+type ExistingEntry = {
+  is_manually_edited: boolean;
+  target_online_edited: string | null;
+  reschedule_note: string | null;
+  status: string;
+};
+
 export async function mergeTSVToSupabase(
   records: TTRecord[],
   uploadDate: string,
@@ -60,111 +67,135 @@ export async function mergeTSVToSupabase(
 
   const ticketIds = records.map((r) => r.ticketId);
 
-  // Fetch semua yang sudah ada berdasarkan ticket_id
+  // 1 query: fetch semua yang sudah ada — ambil protected fields + status sekalian
   const { data: existing, error: fetchError } = await supabase
     .from('tt_records')
-    .select('ticket_id, is_manually_edited')
+    .select('ticket_id, is_manually_edited, target_online_edited, reschedule_note, status')
     .in('ticket_id', ticketIds);
 
   if (fetchError) throw fetchError;
 
-  const existingMap = new Map(
-    (existing ?? []).map((e) => [e.ticket_id as string, e.is_manually_edited as boolean]),
+  const existingMap = new Map<string, ExistingEntry>(
+    (existing ?? []).map((e) => [
+      e.ticket_id as string,
+      {
+        is_manually_edited: e.is_manually_edited as boolean,
+        target_online_edited: e.target_online_edited as string | null,
+        reschedule_note: e.reschedule_note as string | null,
+        status: e.status as string,
+      },
+    ]),
   );
 
   const toInsert: TTRecord[] = [];
-  const toUpdateFull: TTRecord[] = [];      // is_manually_edited = false
-  const toUpdatePartial: TTRecord[] = [];   // is_manually_edited = true
+  const toUpdateFull: TTRecord[] = [];
+  const toUpdatePartial: Array<{ record: TTRecord; existing: ExistingEntry }> = [];
+  let statusChanged = 0;
 
   for (const record of records) {
-    if (!existingMap.has(record.ticketId)) {
+    const ex = existingMap.get(record.ticketId);
+    if (!ex) {
       toInsert.push(record);
-    } else if (existingMap.get(record.ticketId) === false) {
-      toUpdateFull.push(record);
     } else {
-      toUpdatePartial.push(record);
+      if (ex.status !== record.status) statusChanged++;
+      if (!ex.is_manually_edited) {
+        toUpdateFull.push(record);
+      } else {
+        toUpdatePartial.push({ record, existing: ex });
+      }
     }
   }
 
-  // INSERT baru
+  // 3 write operations jalan parallel — aman karena ticket_ids mutually exclusive
+  const writeOps: Promise<void>[] = [];
+
   if (toInsert.length > 0) {
-    const { error } = await supabase.from('tt_records').insert(
-      toInsert.map((r) => ({
-        ticket_id: r.ticketId,
-        site_id: r.siteId || null,
-        site_name: r.siteName,
-        provinsi: r.provinsi || null,
-        kabupaten: r.kabupaten || null,
-        tiket_internal: r.tiketInternal || null,
-        status: r.status as 'OPEN' | 'CLOSED',
-        down_time: r.downTime,
-        date_start: r.dateStart || null,
-        target_online_original: r.targetOnline || null,
-        target_online_edited: r.targetOnline || null,
-        actual_online: r.actualOnline || null,
-        prob_class: r.probClass || null,
-        detail_prob: r.detailProb || null,
-        note_original: r.note || null,
-        teknis_nt: r.teknisNT || null,
-        upload_date: toISODate(uploadDate),
-        is_manually_edited: false,
-      })),
+    writeOps.push(
+      supabase.from('tt_records').insert(
+        toInsert.map((r) => ({
+          ticket_id: r.ticketId,
+          site_id: r.siteId || null,
+          site_name: r.siteName,
+          provinsi: r.provinsi || null,
+          kabupaten: r.kabupaten || null,
+          tiket_internal: r.tiketInternal || null,
+          status: r.status as 'OPEN' | 'CLOSED',
+          down_time: r.downTime,
+          date_start: r.dateStart || null,
+          target_online_original: r.targetOnline || null,
+          target_online_edited: r.targetOnline || null,
+          actual_online: r.actualOnline || null,
+          prob_class: r.probClass || null,
+          detail_prob: r.detailProb || null,
+          note_original: r.note || null,
+          teknis_nt: r.teknisNT || null,
+          upload_date: toISODate(uploadDate),
+          is_manually_edited: false,
+        })),
+      ).then(({ error }) => { if (error) throw error; }),
     );
-    if (error) throw error;
   }
 
-  // UPDATE full (override semua field TSV + target_online_edited)
-  for (const r of toUpdateFull) {
-    const { error } = await supabase
-      .from('tt_records')
-      .update({
-        site_id: r.siteId || null,
-        site_name: r.siteName,
-        provinsi: r.provinsi || null,
-        kabupaten: r.kabupaten || null,
-        tiket_internal: r.tiketInternal || null,
-        status: r.status as 'OPEN' | 'CLOSED',
-        down_time: r.downTime,
-        date_start: r.dateStart || null,
-        target_online_original: r.targetOnline || null,
-        target_online_edited: r.targetOnline || null,
-        actual_online: r.actualOnline || null,
-        prob_class: r.probClass || null,
-        detail_prob: r.detailProb || null,
-        note_original: r.note || null,
-        teknis_nt: r.teknisNT || null,
-        upload_date: toISODate(uploadDate),
-      })
-      .eq('ticket_id', r.ticketId);
-    if (error) throw error;
+  if (toUpdateFull.length > 0) {
+    writeOps.push(
+      supabase.from('tt_records').upsert(
+        toUpdateFull.map((r) => ({
+          ticket_id: r.ticketId,
+          site_id: r.siteId || null,
+          site_name: r.siteName,
+          provinsi: r.provinsi || null,
+          kabupaten: r.kabupaten || null,
+          tiket_internal: r.tiketInternal || null,
+          status: r.status as 'OPEN' | 'CLOSED',
+          down_time: r.downTime,
+          date_start: r.dateStart || null,
+          target_online_original: r.targetOnline || null,
+          target_online_edited: r.targetOnline || null,
+          actual_online: r.actualOnline || null,
+          prob_class: r.probClass || null,
+          detail_prob: r.detailProb || null,
+          note_original: r.note || null,
+          teknis_nt: r.teknisNT || null,
+          upload_date: toISODate(uploadDate),
+          is_manually_edited: false,
+        })),
+        { onConflict: 'ticket_id' },
+      ).then(({ error }) => { if (error) throw error; }),
+    );
   }
 
-  // UPDATE partial (jaga target_online_edited & reschedule_note)
-  for (const r of toUpdatePartial) {
-    const { error } = await supabase
-      .from('tt_records')
-      .update({
-        site_id: r.siteId || null,
-        site_name: r.siteName,
-        provinsi: r.provinsi || null,
-        kabupaten: r.kabupaten || null,
-        tiket_internal: r.tiketInternal || null,
-        status: r.status as 'OPEN' | 'CLOSED',
-        down_time: r.downTime,
-        date_start: r.dateStart || null,
-        target_online_original: r.targetOnline || null,
-        actual_online: r.actualOnline || null,
-        prob_class: r.probClass || null,
-        detail_prob: r.detailProb || null,
-        note_original: r.note || null,
-        teknis_nt: r.teknisNT || null,
-        upload_date: toISODate(uploadDate),
-      })
-      .eq('ticket_id', r.ticketId);
-    if (error) throw error;
+  if (toUpdatePartial.length > 0) {
+    writeOps.push(
+      supabase.from('tt_records').upsert(
+        toUpdatePartial.map(({ record: r, existing: ex }) => ({
+          ticket_id: r.ticketId,
+          site_id: r.siteId || null,
+          site_name: r.siteName,
+          provinsi: r.provinsi || null,
+          kabupaten: r.kabupaten || null,
+          tiket_internal: r.tiketInternal || null,
+          status: r.status as 'OPEN' | 'CLOSED',
+          down_time: r.downTime,
+          date_start: r.dateStart || null,
+          target_online_original: r.targetOnline || null,
+          target_online_edited: ex.target_online_edited,   // PROTECTED
+          actual_online: r.actualOnline || null,
+          prob_class: r.probClass || null,
+          detail_prob: r.detailProb || null,
+          note_original: r.note || null,
+          teknis_nt: r.teknisNT || null,
+          upload_date: toISODate(uploadDate),
+          is_manually_edited: true,                        // PROTECTED
+          reschedule_note: ex.reschedule_note,             // PROTECTED
+        })),
+        { onConflict: 'ticket_id' },
+      ).then(({ error }) => { if (error) throw error; }),
+    );
   }
 
-  // Hitung total record di DB setelah merge
+  await Promise.all(writeOps);
+
+  // 1 query: hitung total record di DB setelah merge
   const { count } = await supabase
     .from('tt_records')
     .select('*', { count: 'exact', head: true });
@@ -172,6 +203,9 @@ export async function mergeTSVToSupabase(
   return {
     inserted: toInsert.length,
     updated: toUpdateFull.length + toUpdatePartial.length,
+    updatedFull: toUpdateFull.length,
+    updatedProtected: toUpdatePartial.length,
+    statusChanged,
     unchanged: 0,
     totalInDB: count ?? 0,
   };
