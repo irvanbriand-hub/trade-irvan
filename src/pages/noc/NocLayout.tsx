@@ -21,6 +21,7 @@ import NocDashboard from './NocDashboard';
 import NocRecap from './NocRecap';
 import NocGenerate from './NocGenerate';
 import NocPO from './NocPO';
+import NOCCapturePage from './NOCCapturePage';
 
 const tabs = [
   { to: 'dashboard', label: 'Dashboard', icon: '📊' },
@@ -154,7 +155,10 @@ function NocInner() {
 export default function NocLayout() {
   return (
     <NOCProvider>
-      <NocInner />
+      <Routes>
+        <Route path="capture" element={<NOCCapturePage />} />
+        <Route path="*" element={<NocInner />} />
+      </Routes>
     </NOCProvider>
   );
 }

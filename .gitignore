@@ -32,3 +32,5 @@ trading-app-backup-*.json
 *.njsproj
 *.sln
 *.sw?
+
+.vercel
