@@ -179,11 +179,10 @@ function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
 
         {/* Dashboard */}
         <NavLink
-          to="/"
-          end
+          to="/dashboard"
           onClick={onClose}
           className={`flex items-center gap-3 px-4 py-3 text-sm font-medium border-b border-border/50 min-h-[44px] ${
-            location.pathname === "/"
+            location.pathname === "/dashboard"
               ? "bg-primary/10 text-primary"
               : "text-muted-foreground hover:text-foreground"
           }`}
@@ -288,10 +287,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Desktop Nav */}
           <nav className="hidden lg:flex items-center gap-1 flex-1">
             <NavLink
-              to="/"
-              end
+              to="/dashboard"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
-                location.pathname === "/"
+                location.pathname === "/dashboard"
                   ? "bg-primary/15 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-accent"
               }`}

@@ -42,11 +42,19 @@ function Spinner() {
   );
 }
 
-// Hanya untuk /login — redirect ke /noc jika sudah login
+// Route "/" — redirect ke /dashboard jika sudah login, /noc jika belum
+function RootRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <Navigate to="/noc" replace />;
+}
+
+// Hanya untuk /login — redirect ke /dashboard jika sudah login
 function PublicOnlyRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
-  if (user) return <Navigate to="/noc" replace />;
+  if (user) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -60,7 +68,7 @@ function ProtectedApp() {
   return (
     <AppLayout>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/journal" element={<Journal />} />
         <Route path="/portfolio" element={<Portfolio />} />
         <Route path="/categories" element={<Categories />} />
@@ -94,8 +102,8 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            {/* Default → NOC (public) */}
-            <Route path="/" element={<Navigate to="/noc" replace />} />
+            {/* Default → /noc jika belum login, /dashboard jika sudah login */}
+            <Route path="/" element={<RootRedirect />} />
 
             {/* PUBLIC: NOC — tidak perlu login */}
             <Route path="/noc/*" element={<NocLayout />} />
