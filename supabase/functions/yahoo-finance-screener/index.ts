@@ -159,6 +159,7 @@ interface StockData {
   prevLlvLow5: number;
   smaVol20: number;
   smaVol5: number;
+  prevSma5: number;
   name: string;
 }
 
@@ -290,6 +291,7 @@ function buildStockData(ticker: string, chart: NonNullable<Awaited<ReturnType<ty
     prevLlvLow5: calcLLV(prevLows, 5),
     smaVol20: calcSMA(volumes.map(v => v), 20),
     smaVol5: calcSMA(volumes.map(v => v), 5),
+    prevSma5: calcSMA(closes.slice(0, -1), 5),
     name: meta.longName || meta.shortName || ticker,
   };
 }

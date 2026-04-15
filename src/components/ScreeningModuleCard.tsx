@@ -1,6 +1,6 @@
 import { type ScreeningModule } from "@/data/mockStocks";
 import {
-  Activity, ShieldCheck, GitBranch, CornerRightUp, BarChart2, CornerLeftDown, Rocket
+  Activity, ShieldCheck, GitBranch, CornerRightUp, BarChart2, CornerLeftDown, Rocket, Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,9 +21,10 @@ interface Props {
   matchCount?: number;
   isTechnical?: boolean;
   hasScanData?: boolean;
+  onInfoClick?: () => void;
 }
 
-export function ScreeningModuleCard({ module, isActive, onClick, matchCount, hasScanData }: Props) {
+export function ScreeningModuleCard({ module, isActive, onClick, matchCount, hasScanData, onInfoClick }: Props) {
   const Icon = iconMap[module.icon] || Activity;
   const displayCount = hasScanData && matchCount !== undefined ? matchCount : (hasScanData ? 0 : null);
 
@@ -38,6 +39,18 @@ export function ScreeningModuleCard({ module, isActive, onClick, matchCount, has
           : "border-border bg-card"
       )}
     >
+      {onInfoClick && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onInfoClick(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onInfoClick(); } }}
+          className="absolute top-2 right-2 p-0.5 rounded text-muted-foreground hover:text-primary transition-colors z-10"
+          aria-label="Info parameter"
+        >
+          <Info className="h-3 w-3" />
+        </span>
+      )}
       <div className="flex items-center gap-2 mb-1">
         <Icon className={cn("h-4 w-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
         <span
@@ -53,7 +66,7 @@ export function ScreeningModuleCard({ module, isActive, onClick, matchCount, has
           {displayCount === null ? "—" : displayCount}
         </span>
       </div>
-      <h3 className="font-semibold text-xs text-foreground truncate">{module.title}</h3>
+      <h3 className="font-semibold text-xs text-foreground truncate pr-4">{module.title}</h3>
       <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{module.description}</p>
     </button>
   );

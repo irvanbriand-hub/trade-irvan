@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Loader2, ScanSearch, AlertCircle, Clock, ArrowUp, ArrowDown, CandlestickChart, Landmark } from "lucide-react";
+import { Loader2, ScanSearch, AlertCircle, Clock, ArrowUp, ArrowDown, CandlestickChart, Landmark, Info } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { getScreenerStore, updateScreenerStore } from "@/lib/screenerStore";
@@ -91,6 +92,7 @@ export function SuperketatScreener() {
   const [skAnalysisTicker, setSkAnalysisTicker] = useState<string | null>(null);
   const [chartTicker, setChartTicker] = useState<SKStockData | null>(null);
   const [onlyConfluence, setOnlyConfluence] = useState(false);
+  const [showInfoDialog, setShowInfoDialog] = useState(false);
   const abortRef = useRef(false);
   const [aiExpandedTickers, setAiExpandedTickers] = useState<Set<string>>(new Set());
   const toggleAiExpand = (ticker: string) => setAiExpandedTickers(prev => {
@@ -243,7 +245,71 @@ export function SuperketatScreener() {
           {isScanning ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <ScanSearch className="h-4 w-4 mr-1" />}
           {isScanning ? "Scanning..." : "SCAN SUPERKETAT"}
         </Button>
+        <button
+          onClick={() => setShowInfoDialog(true)}
+          className="p-1.5 rounded text-muted-foreground hover:text-primary transition-colors"
+          aria-label="Info parameter Superketat"
+        >
+          <Info className="h-4 w-4" />
+        </button>
       </div>
+
+      {/* Dialog info parameter Superketat */}
+      <Dialog open={showInfoDialog} onOpenChange={setShowInfoDialog}>
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Superketat Screener — Parameter</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1 text-xs">
+            {/* Jalur SAFEBULL */}
+            <div>
+              <p className="font-semibold text-green-400 mb-1.5">Jalur SAFEBULL</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li className="flex gap-2"><span className="text-green-400 shrink-0">•</span>Harga close ≥ semua MA (MA3, MA5, MA10, MA20, MA50)</li>
+                <li className="flex gap-2"><span className="text-green-400 shrink-0">•</span>Slope MA3, MA5, MA10, MA20 semuanya positif (naik)</li>
+                <li className="flex gap-2"><span className="text-green-400 shrink-0">•</span>MA3 &gt; MA5 &gt; MA10 &gt; MA20 (susunan bullish sempurna)</li>
+              </ul>
+            </div>
+            {/* Jalur SAFEMSP */}
+            <div>
+              <p className="font-semibold text-blue-400 mb-1.5">Jalur SAFEMSP</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li className="flex gap-2"><span className="text-blue-400 shrink-0">•</span>Harga close ≥ MA3, MA5, MA10</li>
+                <li className="flex gap-2"><span className="text-blue-400 shrink-0">•</span>Slope MA3, MA5, MA10 semuanya positif</li>
+                <li className="flex gap-2"><span className="text-blue-400 shrink-0">•</span>MA3 &gt; MA5 &gt; MA10 (momentum jangka pendek kuat)</li>
+                <li className="flex gap-2"><span className="text-blue-400 shrink-0">•</span>Harga berada di kisaran TMA20 (Triangular MA 20)</li>
+              </ul>
+            </div>
+            {/* VOK */}
+            <div>
+              <p className="font-semibold text-yellow-400 mb-1.5">Volume OK (VOK)</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li className="flex gap-2"><span className="text-yellow-400 shrink-0">•</span>Volume hari ini lebih tinggi dari rata-rata volume historis</li>
+                <li className="flex gap-2"><span className="text-yellow-400 shrink-0">•</span>Tipe VOK: VV1 (value 1 hari), VV0 (value hari ini), atau VM60 (volume MA 60)</li>
+              </ul>
+            </div>
+            {/* Confluence */}
+            <div>
+              <p className="font-semibold text-purple-400 mb-1.5">Confluence (SK + VOL)</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li className="flex gap-2"><span className="text-purple-400 shrink-0">•</span>Lolos salah satu jalur (SAFEBULL atau SAFEMSP) <span className="font-semibold text-foreground">DAN</span> VOK aktif sekaligus</li>
+                <li className="flex gap-2"><span className="text-purple-400 shrink-0">•</span>Sinyal terkuat — prioritas tampil di bagian atas tabel</li>
+              </ul>
+            </div>
+            {/* Indikator lain */}
+            <div>
+              <p className="font-semibold text-foreground mb-1.5">Indikator Tambahan (ditampilkan, bukan filter)</p>
+              <ul className="space-y-1 text-muted-foreground">
+                <li className="flex gap-2"><span className="text-muted-foreground/50 shrink-0">•</span><span><span className="text-foreground font-medium">ii Score</span> — skor intensitas institusional (lebih tinggi = lebih baik)</span></li>
+                <li className="flex gap-2"><span className="text-muted-foreground/50 shrink-0">•</span><span><span className="text-foreground font-medium">TMA20</span> — Triangular Moving Average 20 hari, posisi harga relatif terhadap TMA</span></li>
+                <li className="flex gap-2"><span className="text-muted-foreground/50 shrink-0">•</span><span><span className="text-foreground font-medium">MACD</span> — kondisi bullish/bearish histogram</span></li>
+                <li className="flex gap-2"><span className="text-muted-foreground/50 shrink-0">•</span><span><span className="text-foreground font-medium">Stochastic</span> — kondisi overbought/oversold</span></li>
+                <li className="flex gap-2"><span className="text-muted-foreground/50 shrink-0">•</span><span><span className="text-foreground font-medium">ADX</span> — kekuatan tren (≥25 tren kuat)</span></li>
+              </ul>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Progress */}
       {isScanning && scanProgressPct > 0 && (
