@@ -8,6 +8,8 @@ interface RecapCaptureModeProps {
   poList: PO[];
   selectedDate: string;
   lastUploadTime?: string;
+  /** 'standalone' (default): render outer wrapper + header. 'section': hanya 2-kolom layout tanpa wrapper/header. */
+  renderMode?: 'standalone' | 'section';
 }
 
 interface POGroup {
@@ -289,12 +291,33 @@ function RecapColumn({ groups }: { groups: POGroup[] }) {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const RecapCaptureMode = forwardRef<HTMLDivElement, RecapCaptureModeProps>(
-  ({ records, poList, selectedDate, lastUploadTime }, ref) => {
+  ({ records, poList, selectedDate, lastUploadTime, renderMode = 'standalone' }, ref) => {
     const groups = groupByPO(records, poList);
     const [leftGroups, rightGroups] = splitPOsToColumns(groups);
 
     const openCount = records.filter((r) => r.status === 'OPEN').length;
     const closedCount = records.filter((r) => r.status === 'CLOSED').length;
+
+    const twoColumns = (
+      <div style={{ display: 'flex', alignItems: 'stretch' }}>
+        {/* Left column */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <RecapColumn groups={leftGroups} />
+        </div>
+
+        {/* Red divider */}
+        <div style={{ width: '4px', backgroundColor: '#FF0000', alignSelf: 'stretch', flexShrink: 0 }} />
+
+        {/* Right column */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <RecapColumn groups={rightGroups} />
+        </div>
+      </div>
+    );
+
+    if (renderMode === 'section') {
+      return <div ref={ref}>{twoColumns}</div>;
+    }
 
     return (
       <div
@@ -327,21 +350,7 @@ export const RecapCaptureMode = forwardRef<HTMLDivElement, RecapCaptureModeProps
           </span>
         </div>
 
-        {/* 2-column layout */}
-        <div style={{ display: 'flex', alignItems: 'stretch' }}>
-          {/* Left column */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <RecapColumn groups={leftGroups} />
-          </div>
-
-          {/* Red divider */}
-          <div style={{ width: '4px', backgroundColor: '#FF0000', alignSelf: 'stretch', flexShrink: 0 }} />
-
-          {/* Right column */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <RecapColumn groups={rightGroups} />
-          </div>
-        </div>
+        {twoColumns}
       </div>
     );
   },

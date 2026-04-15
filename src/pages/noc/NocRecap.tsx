@@ -1,11 +1,12 @@
 import { useRef, useState, useMemo, useEffect } from 'react';
-import { format, addDays, subDays } from 'date-fns';
+import { format, addDays, isSameDay, isAfter, startOfDay, differenceInDays } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Camera, LayoutGrid, Download, Search, X } from 'lucide-react';
+import { Camera, LayoutGrid, Download, Search, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
 import { useTTRecords } from '@/lib/noc/hooks/useTTRecords';
 import { usePOList } from '@/lib/noc/hooks/usePOList';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
@@ -15,11 +16,8 @@ import { RecapTable } from '@/components/noc/RecapTable';
 import { RecapCaptureMode } from '@/components/noc/RecapCaptureMode';
 import { ClosedTodayCaptureMode } from '@/components/noc/ClosedTodayCaptureMode';
 import type { ClosedTodayKPI } from '@/components/noc/ClosedTodayCaptureMode';
-import type { TTRecordDB } from '@/lib/noc/types';
+import type { TTRecordDB, PO } from '@/lib/noc/types';
 
-function formatDateLabel(date: Date): string {
-  return format(date, 'EEEE, dd MMMM yyyy', { locale: id });
-}
 
 function toFilterKey(date: Date): string {
   return format(date, 'dd/MM/yyyy');
@@ -28,6 +26,29 @@ function toFilterKey(date: Date): string {
 /** Parse DD/MM/YYYY → Date */
 function parseDMY(key: string): Date {
   const [dd, mm, yyyy] = key.split('/').map(Number);
+  return new Date(yyyy, mm - 1, dd);
+}
+
+/** Kembalikan semua tanggal (inclusive) antara from sampai to */
+function getDatesBetween(from: Date, to: Date): Date[] {
+  const dates: Date[] = [];
+  let current = startOfDay(from);
+  const end = startOfDay(to);
+  while (!isAfter(current, end)) {
+    dates.push(current);
+    current = addDays(current, 1);
+  }
+  return dates;
+}
+
+/** Format Date ke "YYYY-MM-DD" untuk <input type="date"> */
+function toInputValue(date: Date): string {
+  return format(date, 'yyyy-MM-dd');
+}
+
+/** Parse "YYYY-MM-DD" → Date */
+function fromInputValue(val: string): Date {
+  const [yyyy, mm, dd] = val.split('-').map(Number);
   return new Date(yyyy, mm - 1, dd);
 }
 
@@ -75,6 +96,121 @@ function computeKPI(allRecords: TTRecordDB[], filterKey: string): KPIData {
         normalizeDate(r.target_online_original ?? '') === filterKey && r.status === 'CLOSED',
     ).length,
   };
+}
+
+// ─── Capture Range Header ─────────────────────────────────────────────────────
+
+interface CaptureRangeHeaderProps {
+  dateRange: { from: Date; to: Date };
+  lastUploadTime?: string;
+  totalTT: number;
+}
+
+function CaptureRangeHeader({ dateRange, lastUploadTime, totalTT }: CaptureRangeHeaderProps) {
+  const isSingle = isSameDay(dateRange.from, dateRange.to);
+  const dateLabel = isSingle
+    ? format(dateRange.from, 'dd/MM/yyyy')
+    : `${format(dateRange.from, 'dd/MM')} → ${format(dateRange.to, 'dd/MM/yyyy')}`;
+
+  return (
+    <div style={{
+      padding: '10px 16px',
+      backgroundColor: '#1e293b',
+      color: '#ffffff',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    }}>
+      <div style={{ fontSize: '14px', fontWeight: '700' }}>
+        NOC Daily Recap — {dateLabel}{lastUploadTime ? ` | Update: ${lastUploadTime}` : ''}
+      </div>
+      <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+        {totalTT} TT dalam range
+      </div>
+    </div>
+  );
+}
+
+// ─── DateSectionCapture — 1 section per tanggal dalam capture ─────────────────
+
+interface DateSectionProps {
+  date: Date;
+  records: TTRecordDB[];
+  poList: PO[];
+  isFirst: boolean;
+}
+
+function DateSectionCapture({ date, records, poList, isFirst }: DateSectionProps) {
+  const dateRecords = records.filter((r) => {
+    const key = normalizeDate(r.target_online_original ?? '');
+    return key === toFilterKey(date);
+  });
+
+  if (dateRecords.length === 0) return null;
+
+  const openCount = dateRecords.filter((r) => r.status === 'OPEN').length;
+  const closedCount = dateRecords.filter((r) => r.status === 'CLOSED').length;
+
+  const dayName = format(date, 'EEEE', { locale: id });
+  const dateFormatted = format(date, 'dd MMMM yyyy', { locale: id });
+
+  return (
+    <div>
+      {!isFirst && <div style={{ height: '2px', backgroundColor: '#e2e8f0' }} />}
+
+      {/* Section header */}
+      <div style={{
+        padding: '8px 16px',
+        backgroundColor: '#334155',
+        color: '#ffffff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '4px', height: '20px', backgroundColor: '#06b6d4', borderRadius: '2px' }} />
+          <span style={{ fontSize: '13px', fontWeight: '700' }}>{dayName}, {dateFormatted}</span>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <span style={{
+            backgroundColor: '#fef2f2',
+            color: '#b91c1c',
+            border: '1px solid #fecaca',
+            borderRadius: '4px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            fontWeight: '700',
+          }}>🔴 {openCount} Open</span>
+          <span style={{
+            backgroundColor: '#f0fdf4',
+            color: '#15803d',
+            border: '1px solid #bbf7d0',
+            borderRadius: '4px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            fontWeight: '700',
+          }}>✅ {closedCount} Closed</span>
+          <span style={{
+            backgroundColor: '#f8fafc',
+            color: '#334155',
+            border: '1px solid #cbd5e1',
+            borderRadius: '4px',
+            padding: '2px 8px',
+            fontSize: '11px',
+            fontWeight: '700',
+          }}>📋 {dateRecords.length} Total</span>
+        </div>
+      </div>
+
+      {/* 2-kolom data (reuse RecapCaptureMode dalam mode section) */}
+      <RecapCaptureMode
+        records={dateRecords}
+        poList={poList}
+        selectedDate={toFilterKey(date)}
+        renderMode="section"
+      />
+    </div>
+  );
 }
 
 // ─── KPI Cards — Daily Recap (light theme, untuk capture) ────────────────────
@@ -215,11 +351,17 @@ function ClosedTodayKPICards({ kpi }: { kpi: ClosedTodayKPI }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function NocRecap() {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const today = new Date();
+  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>({
+    from: today,
+    to: addDays(today, 2),
+  });
+  const [selectedTabDate, setSelectedTabDate] = useState<Date>(today);
   const [mode, setMode] = useState<'view' | 'capture'>('view');
   const [captureTab, setCaptureTab] = useState<'daily' | 'closed-today'>('daily');
   const combinedRef = useRef<HTMLDivElement>(null);
   const closedTodayRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -231,12 +373,30 @@ export default function NocRecap() {
   const { data: poList = [] } = usePOList();
   const { lastUploadTime } = useNOC();
 
-  const filterKey = toFilterKey(selectedDate);
+  // Pastikan selectedTabDate selalu dalam range saat range berubah
+  useEffect(() => {
+    const dates = getDatesBetween(dateRange.from, dateRange.to);
+    const inRange = dates.some((d) => isSameDay(d, selectedTabDate));
+    if (!inRange) setSelectedTabDate(dateRange.from);
+  }, [dateRange]);
 
+  // filterKey = tanggal tab aktif (untuk view) atau from (untuk KPI)
+  const filterKey = toFilterKey(selectedTabDate);
+
+  // filtered = records untuk tab aktif saat ini
   const filtered = allRecords.filter((r) => {
     const orig = normalizeDate(r.target_online_original ?? '');
     return orig === filterKey;
   });
+
+  // Total TT di seluruh range (untuk capture header)
+  const totalInRange = useMemo(() => {
+    const keys = getDatesBetween(dateRange.from, dateRange.to).map(toFilterKey);
+    return allRecords.filter((r) => {
+      const key = normalizeDate(r.target_online_original ?? '');
+      return keys.includes(key);
+    }).length;
+  }, [allRecords, dateRange]);
 
   const openCount = filtered.filter((r) => r.status === 'OPEN').length;
   const closedCount = filtered.filter((r) => r.status === 'CLOSED').length;
@@ -313,8 +473,16 @@ export default function NocRecap() {
     setSearchOpen(false);
     setPendingHighlight(recordId);
 
-    if (recordDate && recordDate !== filterKey) {
-      setSelectedDate(parseDMY(recordDate));
+    if (recordDate) {
+      const targetDate = parseDMY(recordDate);
+      // Kalau tanggal di luar range, set range ke 1 hari itu
+      const inRange = getDatesBetween(dateRange.from, dateRange.to).some((d) =>
+        isSameDay(d, targetDate),
+      );
+      if (!inRange) {
+        setDateRange({ from: targetDate, to: targetDate });
+      }
+      setSelectedTabDate(targetDate);
     }
 
     setTimeout(() => setPendingHighlight(null), 4500);
@@ -323,6 +491,12 @@ export default function NocRecap() {
   async function handleDownloadCombined() {
     const el = combinedRef.current;
     if (!el) return;
+
+    const dayCount = differenceInDays(dateRange.to, dateRange.from) + 1;
+    if (dayCount > 14) {
+      toast({ title: 'Terlalu banyak hari', description: 'Maksimal 14 hari dalam 1 capture.', variant: 'destructive' });
+      return;
+    }
 
     el.style.left = '0';
     el.style.position = 'fixed';
@@ -340,8 +514,12 @@ export default function NocRecap() {
         logging: false,
         imageTimeout: 0,
       });
+      const isSingle = isSameDay(dateRange.from, dateRange.to);
+      const filename = isSingle
+        ? `noc-recap-${format(dateRange.from, 'yyyy-MM-dd')}.png`
+        : `noc-recap-${format(dateRange.from, 'yyyy-MM-dd')}-to-${format(dateRange.to, 'yyyy-MM-dd')}.png`;
       const link = document.createElement('a');
-      link.download = `noc-recap-${filterKey.replace(/\//g, '-')}.png`;
+      link.download = filename;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } finally {
@@ -372,7 +550,7 @@ export default function NocRecap() {
         imageTimeout: 0,
       });
       const link = document.createElement('a');
-      link.download = `noc-closed-today-${format(selectedDate, 'yyyy-MM-dd')}.png`;
+      link.download = `noc-closed-today-${format(new Date(), 'yyyy-MM-dd')}.png`;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } finally {
@@ -386,47 +564,75 @@ export default function NocRecap() {
     <div className="space-y-4">
       {/* Controls bar */}
       <div className="flex flex-wrap items-center gap-3">
-        {/* Date navigation */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setSelectedDate((d) => subDays(d, 1))}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-
-          <div className="min-w-[220px] rounded-md border border-border bg-muted/40 px-3 py-1.5 text-center text-sm font-medium">
-            {formatDateLabel(selectedDate)}
+        {/* Date range picker */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Dari</span>
+            <input
+              type="date"
+              value={toInputValue(dateRange.from)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                const newFrom = fromInputValue(e.target.value);
+                setDateRange((prev) => ({
+                  from: newFrom,
+                  to: isAfter(newFrom, prev.to) ? newFrom : prev.to,
+                }));
+                setSelectedTabDate(newFrom);
+              }}
+              className="h-8 rounded-md border border-border bg-muted/40 px-2 text-sm text-foreground [color-scheme:dark]"
+            />
           </div>
+          <span className="text-muted-foreground text-sm">→</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Sampai</span>
+            <input
+              type="date"
+              value={toInputValue(dateRange.to)}
+              min={toInputValue(dateRange.from)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setDateRange((prev) => ({ ...prev, to: fromInputValue(e.target.value) }));
+              }}
+              className="h-8 rounded-md border border-border bg-muted/40 px-2 text-sm text-foreground [color-scheme:dark]"
+            />
+          </div>
+        </div>
 
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setSelectedDate((d) => addDays(d, 1))}
-          >
-            <ChevronRight className="h-4 w-4" />
+        {/* Preset buttons */}
+        <div className="flex items-center gap-1">
+          <Button variant="secondary" size="sm" className="h-7 text-xs px-2"
+            onClick={() => { const t = new Date(); setDateRange({ from: t, to: t }); setSelectedTabDate(t); }}>
+            Hari Ini
+          </Button>
+          <Button variant="secondary" size="sm" className="h-7 text-xs px-2"
+            onClick={() => { const t = new Date(); setDateRange({ from: t, to: addDays(t, 1) }); setSelectedTabDate(t); }}>
+            +2 Hari
+          </Button>
+          <Button variant="secondary" size="sm" className="h-7 text-xs px-2"
+            onClick={() => { const t = new Date(); setDateRange({ from: t, to: addDays(t, 2) }); setSelectedTabDate(t); }}>
+            +3 Hari
+          </Button>
+          <Button variant="secondary" size="sm" className="h-7 text-xs px-2"
+            onClick={() => { const t = new Date(); setDateRange({ from: t, to: addDays(t, 6) }); setSelectedTabDate(t); }}>
+            +7 Hari
           </Button>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          className="h-8"
-          onClick={() => setSelectedDate(new Date())}
-        >
-          Hari Ini
-        </Button>
-
-        {/* Summary */}
-        {!isLoading && filtered.length > 0 && (
+        {/* Summary range */}
+        {!isLoading && (
           <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{filtered.length}</span> TT target{' '}
-            {format(selectedDate, 'dd/MM/yyyy')} |{' '}
-            <span className="text-yellow-400 font-medium">{openCount} open</span> |{' '}
-            <span className="text-green-400 font-medium">{closedCount} closed</span>
+            {isSameDay(dateRange.from, dateRange.to)
+              ? format(dateRange.from, 'dd/MM/yyyy')
+              : `${format(dateRange.from, 'dd/MM')} → ${format(dateRange.to, 'dd/MM')}`
+            }
+            {' | '}
+            <span className="font-medium text-foreground">
+              {getDatesBetween(dateRange.from, dateRange.to).length} hari
+            </span>
+            {totalInRange > 0 && (
+              <> | <span className="font-medium text-foreground">{totalInRange} TT</span></>
+            )}
           </p>
         )}
 
@@ -456,7 +662,7 @@ export default function NocRecap() {
           {/* Download PNG — muncul saat capture, sesuai tab aktif */}
           {mode === 'capture' && (
             <>
-              {captureTab === 'daily' && filtered.length > 0 && (
+              {captureTab === 'daily' && totalInRange > 0 && (
                 <Button size="sm" className="h-8 gap-1.5" onClick={handleDownloadCombined}>
                   <Download className="h-3.5 w-3.5" />
                   Download PNG
@@ -474,7 +680,7 @@ export default function NocRecap() {
       </div>
 
       {/* ── Capture tab switcher — hanya saat mode capture ── */}
-      {mode === 'capture' && filtered.length > 0 && (
+      {mode === 'capture' && totalInRange > 0 && (
         <div className="flex rounded-md border border-border overflow-hidden w-fit">
           <Button
             variant={captureTab === 'daily' ? 'default' : 'ghost'}
@@ -592,29 +798,83 @@ export default function NocRecap() {
         <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
           Memuat data...
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <p className="text-3xl mb-3">📋</p>
-          <p className="text-base font-medium">Tidak ada TT</p>
-          <p className="text-sm mt-1">
-            Tidak ada TT dengan target online {format(selectedDate, 'dd/MM/yyyy')}
-          </p>
-        </div>
       ) : mode === 'view' ? (
-        <RecapTable
-          key={filterKey}
-          records={filtered}
-          poList={poList}
-          initialHighlightId={pendingHighlight}
-        />
+        <>
+          {/* Tabs per tanggal dalam range */}
+          {getDatesBetween(dateRange.from, dateRange.to).length > 1 && (
+            <div className="flex flex-wrap gap-1 border-b border-border pb-2">
+              {getDatesBetween(dateRange.from, dateRange.to).map((date) => {
+                const key = toFilterKey(date);
+                const count = allRecords.filter(
+                  (r) => normalizeDate(r.target_online_original ?? '') === key,
+                ).length;
+                const isActive = isSameDay(date, selectedTabDate);
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedTabDate(date)}
+                    className={[
+                      'flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground',
+                    ].join(' ')}
+                  >
+                    {format(date, 'EEE dd/MM', { locale: id })}
+                    {count > 0 && (
+                      <span className={[
+                        'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                        isActive ? 'bg-primary-foreground/20' : 'bg-muted',
+                      ].join(' ')}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <p className="text-3xl mb-3">📋</p>
+              <p className="text-base font-medium">Tidak ada TT</p>
+              <p className="text-sm mt-1">
+                Tidak ada TT dengan target online {toFilterKey(selectedTabDate)}
+              </p>
+            </div>
+          ) : (
+            <RecapTable
+              key={filterKey}
+              records={filtered}
+              poList={poList}
+              initialHighlightId={pendingHighlight}
+            />
+          )}
+        </>
       ) : captureTab === 'daily' ? (
         <div className="overflow-x-auto pb-3">
-          <RecapCaptureMode
-            records={filtered}
-            poList={poList}
-            selectedDate={filterKey}
-            lastUploadTime={lastUploadTime}
-          />
+          {totalInRange === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+              <p className="text-3xl mb-3">📋</p>
+              <p className="text-base font-medium">Tidak ada TT dalam range ini</p>
+            </div>
+          ) : (
+            /* Preview capture — tampilkan semua section */
+            <div style={{ width: '1400px', backgroundColor: '#ffffff', fontFamily: 'Arial, sans-serif', fontSize: '11px' }}>
+              <CaptureRangeHeader dateRange={dateRange} lastUploadTime={lastUploadTime} totalTT={totalInRange} />
+              <KPICaptureCards kpi={kpi} />
+              {getDatesBetween(dateRange.from, dateRange.to).map((date, idx) => (
+                <DateSectionCapture
+                  key={date.toISOString()}
+                  date={date}
+                  records={allRecords}
+                  poList={poList}
+                  isFirst={idx === 0}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         /* Closed Today preview */
@@ -623,13 +883,12 @@ export default function NocRecap() {
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <p className="text-2xl mb-2">✅</p>
               <p className="text-sm font-medium">Belum ada TT yang closed</p>
-              <p className="text-xs mt-1">Pada tanggal {filterKey} belum ada TT berstatus CLOSED</p>
             </div>
           ) : (
             <ClosedTodayCaptureMode
               records={closedTodayRecords}
               poList={poList}
-              selectedDate={filterKey}
+              selectedDate={toFilterKey(new Date())}
               lastUploadTime={lastUploadTime}
               kpi={closedTodayKPI}
             />
@@ -637,8 +896,8 @@ export default function NocRecap() {
         </div>
       )}
 
-      {/* ── Hidden div — Daily Recap (KPI + Recap) ── */}
-      {filtered.length > 0 && (
+      {/* ── Hidden div — Daily Recap multi-section (KPI + sections per tanggal) ── */}
+      {totalInRange > 0 && (
         <div
           ref={combinedRef}
           style={{
@@ -652,13 +911,17 @@ export default function NocRecap() {
             top: 0,
           }}
         >
+          <CaptureRangeHeader dateRange={dateRange} lastUploadTime={lastUploadTime} totalTT={totalInRange} />
           <KPICaptureCards kpi={kpi} />
-          <RecapCaptureMode
-            records={filtered}
-            poList={poList}
-            selectedDate={filterKey}
-            lastUploadTime={lastUploadTime}
-          />
+          {getDatesBetween(dateRange.from, dateRange.to).map((date, idx) => (
+            <DateSectionCapture
+              key={date.toISOString()}
+              date={date}
+              records={allRecords}
+              poList={poList}
+              isFirst={idx === 0}
+            />
+          ))}
         </div>
       )}
 
