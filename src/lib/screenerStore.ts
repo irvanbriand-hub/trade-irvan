@@ -9,7 +9,7 @@ export interface ScreenerStockData {
   sma50: number; sma200: number; ema10: number; ema20: number; ema50: number;
   bbMean: number; bbTop: number; bbBottom: number; bbWidth: number;
   prevBbBottom: number; prevCloseBelowBbBottom: boolean; prevLlvLow5: number;
-  smaVol20: number; smaVol5: number; name: string;
+  smaVol20: number; smaVol5: number; prevSma5: number; name: string;
 }
 
 export interface AnalisisRow {
@@ -63,6 +63,8 @@ interface ScreenerStore {
   swingStocks: Record<SwingScreenerType, SwingStockData[]>;
   swingLastScanTime: Record<SwingScreenerType, Date | null>;
   swingHasScanRun: Record<SwingScreenerType, boolean>;
+  // IEP Gap Analysis cache (ticker → result or null)
+  iepCache: Record<string, unknown>;
 }
 
 const store: ScreenerStore = {
@@ -78,6 +80,7 @@ const store: ScreenerStore = {
   swingStocks: { ketat_allma: [], ketat_pertama: [], bottom_fishing: [] },
   swingLastScanTime: { ketat_allma: null, ketat_pertama: null, bottom_fishing: null },
   swingHasScanRun: { ketat_allma: false, ketat_pertama: false, bottom_fishing: false },
+  iepCache: {},
 };
 
 export function getScreenerStore() { return store; }
@@ -99,4 +102,5 @@ export function resetScreenerStore() {
   store.swingStocks = { ketat_allma: [], ketat_pertama: [], bottom_fishing: [] };
   store.swingLastScanTime = { ketat_allma: null, ketat_pertama: null, bottom_fishing: null };
   store.swingHasScanRun = { ketat_allma: false, ketat_pertama: false, bottom_fishing: false };
+  store.iepCache = {};
 }

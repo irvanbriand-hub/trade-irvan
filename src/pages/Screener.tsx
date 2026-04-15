@@ -5,7 +5,7 @@ import { ScreeningModuleCard } from "@/components/ScreeningModuleCard";
 import { StockTradeStatsModal } from "@/components/StockTradeStatsModal";
 import { StockChartPopup } from "@/components/StockChartPopup";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowUp, ArrowDown, Loader2, ScanSearch, AlertCircle, Layers, Star, Download, CandlestickChart, Trophy, TrendingUp, Flame, ExternalLink, Zap, Clock, ChevronDown } from "lucide-react";
+import { ArrowUp, ArrowDown, Loader2, ScanSearch, AlertCircle, Layers, Star, Download, CandlestickChart, Trophy, TrendingUp, Flame, ExternalLink, Zap, Clock, ChevronDown, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,8 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/comp
 import { useAkSmartMoney } from "@/hooks/useAkSmartMoney";
 import { AkSmartMoneyBadgeComponent } from "@/components/AkSmartMoneyBadge";
 import { useBandarmology } from "@/hooks/useBandarmology";
+import { runIepBacktest, clearIepCache, type IepBacktestResult } from "@/hooks/useIepBacktest";
+import { IepDetailModal } from "@/components/IepDetailModal";
 
 
 
@@ -85,6 +87,7 @@ function toStock(s: ScreenerStockData): Stock {
     prevBollingerBottom: s.prevBbBottom,
     prevClose2BollingerBottom: s.prevCloseBelowBbBottom,
     smaVol20: s.smaVol20 || 0,
+    prevSma5: s.prevSma5 || 0,
   };
 }
 
@@ -125,6 +128,7 @@ export default function Screener() {
   const [expandedChartTickers, setExpandedChartTickers] = useState<Set<string>>(new Set());
   const [showSkDebug, setShowSkDebug] = useState(false);
   const [mainTab, setMainTab] = useState<"bpjs" | "superketat" | "swing">("bpjs");
+  const [infoModule, setInfoModule] = useState<string | null>(null);
   const [aiExpandedTickers, setAiExpandedTickers] = useState<Set<string>>(new Set());
   const toggleAiExpand = (ticker: string) => setAiExpandedTickers(prev => {
     const next = new Set(prev);
@@ -149,6 +153,18 @@ export default function Screener() {
   const [analysisProgressCurrent, setAnalysisProgressCurrent] = useState(0);
   const [analysisProgressTotal, setAnalysisProgressTotal] = useState(0);
   const analysisAbortRef = useRef(false);
+
+  // IEP Gap state — initialize from store so data survives navigation
+  const [iepCache, setIepCache] = useState<Record<string, IepBacktestResult | "loading" | null>>(
+    _store.iepCache as Record<string, IepBacktestResult | "loading" | null>
+  );
+  const [iepDetailTicker, setIepDetailTicker] = useState<string | null>(null);
+  const [isIepAnalyzing, setIsIepAnalyzing] = useState(false);
+  const [iepAnalyzeProgress, setIepAnalyzeProgress] = useState({ done: 0, total: 0 });
+  const iepAbortRef = useRef(false);
+  const [iepFilterWrMin, setIepFilterWrMin] = useState("all");
+  const [iepFilterBuyMin, setIepFilterBuyMin] = useState("all");
+  const [iepFilterVersion, setIepFilterVersion] = useState("all");
 
   // Analisa filters
   const [ahFilterScreener, setAhFilterScreener] = useState("all");
@@ -219,6 +235,15 @@ export default function Screener() {
     return Object.keys(tickerModuleMap);
   }, [tickerModuleMap]);
 
+  // Get only V2 — Big Move Breakout tickers with ≥10% jump (for IEP Analysis)
+  const v2Tickers = useMemo(() => {
+    return allStockData.filter(s => {
+      const isV2 = tickerModuleMap[s.ticker]?.includes("V2 — Big Move Breakout");
+      const jump10 = s.prevClose > 0 && (s.high / s.prevClose) >= 1.10;
+      return isV2 && jump10;
+    }).map(s => s.ticker);
+  }, [allStockData, tickerModuleMap]);
+
   const moduleFilteredStocks = useMemo(() => {
     if (!activeModule || allStocks.length === 0) return allStockData;
     if (activeModule === "multi-criteria") {
@@ -241,6 +266,8 @@ export default function Screener() {
     setAnalisisRows([]);
     setAnalysisDone(false);
     updateScreenerStore({ analisisRows: [], analysisDone: false });
+    // Clear IEP cache so scan ulang selalu fetch data terbaru
+    clearIepCache();
 
     const accumulated: ScreenerStockData[] = [];
 
@@ -512,6 +539,66 @@ export default function Screener() {
     }
   };
 
+  const fetchIep = async (ticker: string) => {
+    setIepCache(prev => ({ ...prev, [ticker]: "loading" }));
+    try {
+      const result = await runIepBacktest(ticker);
+      setIepCache(prev => ({ ...prev, [ticker]: result }));
+    } catch {
+      setIepCache(prev => ({ ...prev, [ticker]: null }));
+    }
+  };
+
+  const runAllIep = useCallback(async () => {
+    if (v2Tickers.length === 0) return;
+    setIsIepAnalyzing(true);
+    iepAbortRef.current = false;
+    setIepAnalyzeProgress({ done: 0, total: v2Tickers.length });
+    let successCount = 0;
+    let firstError: string | null = null;
+
+    for (let i = 0; i < v2Tickers.length; i++) {
+      if (iepAbortRef.current) break;
+      const ticker = v2Tickers[i];
+
+      // Set loading only if not already fetched
+      setIepCache(prev => {
+        const existing = prev[ticker];
+        if (existing && existing !== "loading") return prev;
+        return { ...prev, [ticker]: "loading" };
+      });
+
+      let ok = false;
+      try {
+        const result = await runIepBacktest(ticker); // uses module-level cache if already fetched
+        setIepCache(prev => ({ ...prev, [ticker]: result }));
+        ok = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[IEP] Error fetching ${ticker}:`, err);
+        if (!firstError) firstError = `${ticker}: ${msg}`;
+        setIepCache(prev => ({ ...prev, [ticker]: null }));
+      }
+      if (ok) successCount++;
+
+      setIepAnalyzeProgress({ done: i + 1, total: v2Tickers.length });
+
+      if (i < v2Tickers.length - 1 && !iepAbortRef.current) {
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+
+    console.log(`[IEP] Analisa selesai. Sukses: ${successCount}/${v2Tickers.length}`);
+    toast({
+      title: `IEP Analisa Selesai`,
+      description: successCount === 0 && firstError
+        ? `Semua gagal. Error: ${firstError}`
+        : `${successCount} berhasil, ${v2Tickers.length - successCount} gagal dari ${v2Tickers.length} ticker V2`,
+      variant: successCount === 0 ? "destructive" : "default",
+    });
+    setIsIepAnalyzing(false);
+  }, [v2Tickers]);
+
   // Analisa insights
   const analisisInsights = useMemo(() => {
     if (!analysisDone || analisisRows.length === 0) return null;
@@ -519,6 +606,75 @@ export default function Screener() {
     const consistent = analisisRows.filter(r => r.winRate >= 70).sort((a, b) => b.total - a.total)[0] || null;
     return { actionable, consistent };
   }, [analisisRows, analysisDone]);
+
+  // IEP Tab — table data (semua ticker yang sudah dianalisa, termasuk 0 sinyal)
+  const iepTableData = useMemo(() => {
+    // Semua ticker yang sudah selesai dianalisa (result = IepBacktestResult, bukan null/loading)
+    const analyzed = v2Tickers
+      .map(t => ({ ticker: t, result: iepCache[t] }))
+      .filter((x): x is { ticker: string; result: IepBacktestResult } =>
+        !!x.result && x.result !== "loading"
+      );
+
+    // Apply filters — filter hanya berlaku untuk ticker yang PUNYA bestBucket
+    // Ticker dengan 0 sinyal tetap muncul kecuali filter aktif
+    return analyzed.filter(({ result }) => {
+      const bb = result.bestBucket;
+      const hasSignal = result.summary.all.signal > 0;
+
+      // Kalau filter aktif tapi tidak ada sinyal → sembunyikan
+      if (!hasSignal) {
+        if (iepFilterVersion !== "all" || iepFilterWrMin !== "all" || iepFilterBuyMin !== "all") return false;
+        return true; // filter "Semua" → tetap tampilkan meski 0 sinyal
+      }
+
+      if (iepFilterVersion !== "all") {
+        if (!bb || bb.version !== iepFilterVersion) return false;
+      }
+      if (iepFilterWrMin !== "all") {
+        const min = parseInt(iepFilterWrMin);
+        if (!bb || bb.winRate < min) return false;
+      }
+      if (iepFilterBuyMin !== "all") {
+        const min = parseInt(iepFilterBuyMin);
+        const bucketData = bb ? result.buckets.find(b => b.bucket === bb.bucket) : null;
+        const vStat = bucketData && bb ? bucketData[bb.version as "v21" | "v22"] : null;
+        if (!vStat || vStat.buy < min) return false;
+      }
+      return true;
+    }).sort((a, b) => {
+      // Ticker dengan sinyal naik ke atas, 0 sinyal ke bawah
+      const aWr = a.result.bestBucket?.winRate ?? -1;
+      const bWr = b.result.bestBucket?.winRate ?? -1;
+      return bWr - aWr;
+    });
+  }, [iepCache, v2Tickers, iepFilterWrMin, iepFilterBuyMin, iepFilterVersion]);
+
+  // IEP Top 3 (before filters, from all analyzed with bestBucket + buy >= 2)
+  const iepTop3 = useMemo(() => {
+    return v2Tickers
+      .map(t => ({ ticker: t, result: iepCache[t] }))
+      .filter((x): x is { ticker: string; result: IepBacktestResult } =>
+        !!x.result && x.result !== "loading" && !!(x.result as IepBacktestResult).bestBucket
+      )
+      .filter(({ result }) => {
+        const bb = result.bestBucket!;
+        const bucketData = result.buckets.find(b => b.bucket === bb.bucket);
+        const vStat = bucketData ? bucketData[bb.version as "v21" | "v22"] : null;
+        return vStat && vStat.buy >= 2;
+      })
+      .sort((a, b) => (b.result.bestBucket!.winRate) - (a.result.bestBucket!.winRate))
+      .slice(0, 3);
+  }, [iepCache, v2Tickers]);
+
+  // Sync iepCache ke screenerStore (filter out "loading" entries agar tidak tersimpan)
+  useEffect(() => {
+    const toStore: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(iepCache)) {
+      if (v !== "loading") toStore[k] = v;
+    }
+    updateScreenerStore({ iepCache: toStore });
+  }, [iepCache]);
 
   // Scroll to ticker when returning from Historical Backtest
   useEffect(() => {
@@ -710,6 +866,7 @@ export default function Screener() {
             matchCount={moduleCounts[mod.id]}
             isTechnical
             hasScanData={allStockData.length > 0}
+            onInfoClick={() => setInfoModule(mod.id)}
           />
         ))}
       </div>
@@ -777,6 +934,11 @@ export default function Screener() {
               Analisa Historis
               {isAnalyzing && <Loader2 className="h-3 w-3 ml-1.5 animate-spin" />}
               {analysisDone && <span className="ml-1.5 text-[10px]">✓</span>}
+            </TabsTrigger>
+            <TabsTrigger value="iep-gap">
+              <Sun className="h-3.5 w-3.5 mr-1 text-yellow-500" />
+              IEP Gap Analysis
+              {isIepAnalyzing && <Loader2 className="h-3 w-3 ml-1.5 animate-spin" />}
             </TabsTrigger>
           </TabsList>
 
@@ -926,6 +1088,11 @@ export default function Screener() {
                                   </TooltipProvider>
                                 );
                               })()}
+                              {tickerModuleMap[r.ticker]?.includes("V2 — Big Move Breakout") && (
+                                r.prevClose < r.prevSma5
+                                  ? <span className="text-[8px] px-1 py-0.5 rounded border font-medium bg-blue-500/10 text-blue-600 border-blue-500/30">V2.1</span>
+                                  : <span className="text-[8px] px-1 py-0.5 rounded border font-medium bg-green-500/10 text-green-600 border-green-500/30">V2.2</span>
+                              )}
                             </div>
                             {r.name && r.name !== r.ticker && (
                               <span className="block text-[9px] sm:text-[10px] text-muted-foreground truncate max-w-[100px] sm:max-w-[150px]">{r.name}</span>
@@ -1131,6 +1298,34 @@ export default function Screener() {
                               ["wins", "WIN"],
                               ["losses", "LOSE"],
                               ["winRate", "Win Rate %"],
+                            ] as [AnalisisSortKey, string][]).map(([key, label]) => (
+                              <TableHead
+                                key={key}
+                                className="text-xs cursor-pointer select-none hover:text-foreground"
+                                onClick={() => handleAhSort(key)}
+                              >
+                                <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                                  {label}
+                                  <AhSortIcon col={key} />
+                                </span>
+                              </TableHead>
+                            ))}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <TableHead className="text-xs whitespace-nowrap cursor-default">
+                                    <span className="inline-flex items-center gap-1">
+                                      <Sun className="h-3 w-3 text-yellow-500" />
+                                      IEP Gap
+                                    </span>
+                                  </TableHead>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-[200px] text-xs">
+                                  Klik 'Cek' untuk analisa IEP Gap (Beli Pagi Jual Pagi) — strategi berbeda dari screener existing
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                            {([
                               ["avgGainWin", "Avg % (WIN)"],
                               ["lastSignalDate", "Last Signal"],
                             ] as [AnalisisSortKey, string][]).map(([key, label]) => (
@@ -1190,6 +1385,44 @@ export default function Screener() {
                                       {r.winRate.toFixed(1)}%
                                     </span>
                                   </TableCell>
+                                  <TableCell className="text-center" onClick={e => e.stopPropagation()}>
+                                    {(() => {
+                                      const iepState = iepCache[r.ticker];
+                                      if (!iepState) {
+                                        return (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            className="h-5 text-[10px] px-1.5 text-yellow-600 hover:text-yellow-500"
+                                            onClick={() => fetchIep(r.ticker)}
+                                          >
+                                            <Sun className="h-3 w-3 mr-0.5" />Cek
+                                          </Button>
+                                        );
+                                      }
+                                      if (iepState === "loading") {
+                                        return <Loader2 className="h-3 w-3 animate-spin mx-auto text-muted-foreground" />;
+                                      }
+                                      const bb = iepState.bestBucket;
+                                      if (!bb) return <span className="text-[10px] text-muted-foreground">—</span>;
+                                      const wr = bb.winRate;
+                                      return (
+                                        <Badge
+                                          className={cn(
+                                            "text-[9px] cursor-pointer px-1.5 py-0",
+                                            wr >= 70
+                                              ? "bg-green-500/10 text-green-600 border-green-500/30 hover:bg-green-500/20"
+                                              : wr >= 50
+                                              ? "bg-yellow-500/10 text-yellow-600 border-yellow-500/30 hover:bg-yellow-500/20"
+                                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                                          )}
+                                          onClick={() => setIepDetailTicker(r.ticker)}
+                                        >
+                                          Gap {bb.label} • WR {wr.toFixed(0)}%
+                                        </Badge>
+                                      );
+                                    })()}
+                                  </TableCell>
                                   <TableCell className="text-center font-mono text-xs">{r.avgGainWin.toFixed(2)}%</TableCell>
                                   <TableCell className="text-xs font-mono text-muted-foreground">{r.lastSignalDate}</TableCell>
                                   <TableCell>
@@ -1205,7 +1438,7 @@ export default function Screener() {
                                 </TableRow>
                                 {isExpanded && (
                                   <tr key={`${rowKey}-chart`}>
-                                    <td colSpan={9} className="p-0 border-b border-border">
+                                    <td colSpan={10} className="p-0 border-b border-border">
                                       <div className="animate-in slide-in-from-top-2 duration-300">
                                         <InlineStockChart ticker={r.ticker} />
                                       </div>
@@ -1234,6 +1467,266 @@ export default function Screener() {
                   <p>Tidak ada data historis yang ditemukan untuk emiten yang lolos scan.</p>
                 </CardContent>
               </Card>
+            )}
+          </TabsContent>
+
+          {/* TAB 3: IEP GAP ANALYSIS */}
+          <TabsContent value="iep-gap" className="space-y-4">
+            {/* Header */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-bold text-foreground flex items-center gap-2">
+                  <Sun className="h-5 w-5 text-yellow-500" />
+                  IEP Gap Analysis — Beli Pagi Jual Pagi
+                </h2>
+                <Badge className="text-[10px] bg-yellow-500/10 text-yellow-600 border-yellow-500/30">
+                  ⚠️ Strategi berbeda dari screener existing (beli sore jual pagi)
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Analisis perilaku gap open saham setelah sinyal V2.1/V2.2 — entry saat buka pasar, exit hari yang sama
+              </p>
+            </div>
+
+            {/* Tombol Analisa Semua */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                size="sm"
+                disabled={v2Tickers.length === 0 || isIepAnalyzing}
+                onClick={isIepAnalyzing ? () => { iepAbortRef.current = true; } : runAllIep}
+                className="text-xs"
+              >
+                {isIepAnalyzing
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Stop</>
+                  : <><Sun className="h-3.5 w-3.5 mr-1.5" />Analisa Semua V2 ({v2Tickers.length})</>
+                }
+              </Button>
+              {v2Tickers.length === 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {scannedTickers.length === 0
+                    ? "Lakukan scan BPJS dulu untuk mendapatkan daftar ticker"
+                    : "Tidak ada ticker V2 — Big Move Breakout yang lolos scan hari ini"}
+                </span>
+              )}
+              {iepTableData.length > 0 && !isIepAnalyzing && (
+                <span className="text-xs text-muted-foreground">{iepTableData.length} ticker teranalisa</span>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            {isIepAnalyzing && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Menganalisa {iepAnalyzeProgress.done} dari {iepAnalyzeProgress.total} ticker...</span>
+                  <span>{iepAnalyzeProgress.total > 0 ? Math.round((iepAnalyzeProgress.done / iepAnalyzeProgress.total) * 100) : 0}%</span>
+                </div>
+                <Progress value={iepAnalyzeProgress.total > 0 ? (iepAnalyzeProgress.done / iepAnalyzeProgress.total) * 100 : 0} className="h-2" />
+              </div>
+            )}
+
+            {/* Top 3 Paling Actionable */}
+            {iepTop3.length > 0 && (
+              <Card className="border-orange-500/30 bg-orange-500/5">
+                <CardContent className="pt-4 pb-3 px-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Flame className="h-4 w-4 text-orange-500" />
+                    <span className="text-xs font-semibold text-orange-500">🔥 Top 3 Paling Actionable</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {iepTop3.map(({ ticker, result }) => {
+                      const bb = result.bestBucket!;
+                      return (
+                        <button
+                          key={ticker}
+                          onClick={() => setIepDetailTicker(ticker)}
+                          className={cn(
+                            "flex flex-col items-start rounded-lg border px-3 py-2 text-left transition-colors hover:bg-orange-500/10",
+                            bb.winRate >= 70 ? "border-green-500/40 bg-green-500/5"
+                              : bb.winRate >= 50 ? "border-yellow-500/40 bg-yellow-500/5"
+                              : "border-border bg-card"
+                          )}
+                        >
+                          <span className="font-mono font-bold text-sm text-foreground">{ticker}</span>
+                          <span className="text-[10px] text-muted-foreground mt-0.5">
+                            Gap {bb.label} • {bb.version.toUpperCase()}
+                          </span>
+                          <span className={cn("text-xs font-bold mt-0.5",
+                            bb.winRate >= 70 ? "text-green-500" : bb.winRate >= 50 ? "text-yellow-600" : "text-muted-foreground"
+                          )}>
+                            WR {bb.winRate.toFixed(0)}% • Avg {bb.avgReturn.toFixed(1)}%
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Filter + Tabel Ranking */}
+            {(iepTableData.length > 0 || isIepAnalyzing) && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Sun className="h-4 w-4 text-yellow-500" />
+                    Ranking IEP Gap — Strategi Beli Pagi Jual Pagi
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Filters */}
+                  <div className="flex flex-wrap gap-3 mb-4 items-center">
+                    <Select value={iepFilterWrMin} onValueChange={setIepFilterWrMin}>
+                      <SelectTrigger className="w-36 h-8 text-xs">
+                        <SelectValue placeholder="Min WR" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">WR Semua</SelectItem>
+                        <SelectItem value="50">&gt;50%</SelectItem>
+                        <SelectItem value="60">&gt;60%</SelectItem>
+                        <SelectItem value="70">&gt;70%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={iepFilterBuyMin} onValueChange={setIepFilterBuyMin}>
+                      <SelectTrigger className="w-40 h-8 text-xs">
+                        <SelectValue placeholder="Min Buy Count" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Buy Semua</SelectItem>
+                        <SelectItem value="2">&gt;= 2</SelectItem>
+                        <SelectItem value="3">&gt;= 3</SelectItem>
+                        <SelectItem value="5">&gt;= 5</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={iepFilterVersion} onValueChange={setIepFilterVersion}>
+                      <SelectTrigger className="w-36 h-8 text-xs">
+                        <SelectValue placeholder="Version" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua Versi</SelectItem>
+                        <SelectItem value="v21">V2.1 saja</SelectItem>
+                        <SelectItem value="v22">V2.2 saja</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs text-muted-foreground ml-auto">
+                      {iepTableData.filter(x => x.result.bestBucket).length} punya sinyal
+                      {" / "}
+                      {iepTableData.length} dianalisa
+                    </span>
+                  </div>
+
+                  <div className="max-h-[600px] overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Ticker</TableHead>
+                          <TableHead className="text-xs">Screener Lolos</TableHead>
+                          <TableHead className="text-xs">Best Gap</TableHead>
+                          <TableHead className="text-xs">Versi</TableHead>
+                          <TableHead className="text-xs text-center">WR</TableHead>
+                          <TableHead className="text-xs text-center">Avg Return</TableHead>
+                          <TableHead className="text-xs text-center">Buy Count</TableHead>
+                          <TableHead className="text-xs">Aksi</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {iepTableData.map(({ ticker, result }) => {
+                          const bb = result.bestBucket;
+                          const screeners = tickerModuleMap[ticker] || [];
+                          const hasSignal = result.summary.all.signal > 0;
+                          // Get buy count from the matching bucket/version
+                          const bucketData = bb ? result.buckets.find(b => b.bucket === bb.bucket) : null;
+                          const vStat = bucketData && bb ? bucketData[bb.version as "v21" | "v22"] : null;
+                          const buyCount = vStat?.buy ?? 0;
+
+                          return (
+                            <TableRow
+                              key={ticker}
+                              className={cn(
+                                "hover:bg-muted/30",
+                                hasSignal ? "cursor-pointer" : "opacity-50 cursor-default"
+                              )}
+                              onClick={() => hasSignal && setIepDetailTicker(ticker)}
+                            >
+                              <TableCell className="font-mono font-bold text-xs">{ticker}</TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-0.5 max-w-[180px]">
+                                  {screeners.slice(0, 3).map(s => (
+                                    <Badge key={s} className="text-[8px] px-1 py-0 bg-primary/10 text-primary border-primary/20">
+                                      {s.split("—")[0].trim()}
+                                    </Badge>
+                                  ))}
+                                  {screeners.length > 3 && (
+                                    <Badge className="text-[8px] px-1 py-0 bg-muted text-muted-foreground">+{screeners.length - 3}</Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {bb
+                                  ? <Badge className="text-[9px] px-1.5 py-0 bg-blue-500/10 text-blue-600 border-blue-500/30">Gap {bb.label}</Badge>
+                                  : <span className="text-[9px] text-muted-foreground italic">0 sinyal</span>
+                                }
+                              </TableCell>
+                              <TableCell>
+                                {bb
+                                  ? <Badge className={cn("text-[9px] px-1.5 py-0",
+                                      bb.version === "v21"
+                                        ? "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                                        : "bg-green-500/10 text-green-600 border-green-500/30"
+                                    )}>{bb.version.toUpperCase()}</Badge>
+                                  : <span className="text-xs text-muted-foreground">—</span>
+                                }
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {bb
+                                  ? <span className={cn("font-bold font-mono text-xs",
+                                      bb.winRate >= 70 ? "text-green-500" : bb.winRate >= 50 ? "text-yellow-600" : "text-red-500"
+                                    )}>{bb.winRate.toFixed(0)}%</span>
+                                  : <span className="text-xs text-muted-foreground">—</span>
+                                }
+                              </TableCell>
+                              <TableCell className="text-center font-mono text-xs">
+                                {bb ? `${bb.avgReturn.toFixed(1)}%` : "—"}
+                              </TableCell>
+                              <TableCell className="text-center font-mono text-xs">{buyCount || "—"}</TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 text-[10px] px-2"
+                                  onClick={e => { e.stopPropagation(); setIepDetailTicker(ticker); }}
+                                >
+                                  <Sun className="h-3 w-3 mr-1 text-yellow-500" />Detail
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        {iepTableData.length === 0 && !isIepAnalyzing && (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-8">
+                              Belum ada data. Klik "Analisa Semua" untuk mulai analisa IEP Gap.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <p className="text-[10px] text-muted-foreground mt-3 border-t border-border pt-2">
+                    * Dari ticker yang lolos scan BPJS hari ini. Baris redup (0 sinyal) = saham tidak pernah naik ≥5% dalam sehari selama 1 tahun terakhir.
+                    Filter aktif hanya menyaring baris yang punya sinyal.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Empty state */}
+            {!isIepAnalyzing && iepTableData.length === 0 && v2Tickers.length > 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Sun className="h-10 w-10 mb-3 opacity-30 text-yellow-500" />
+                <p className="text-sm font-medium">Belum ada analisa IEP Gap</p>
+                <p className="text-xs mt-1">Klik "Analisa Semua V2" untuk menganalisa {v2Tickers.length} ticker V2 — Big Move Breakout</p>
+              </div>
             )}
           </TabsContent>
         </Tabs>
@@ -1268,6 +1761,41 @@ export default function Screener() {
         ticker={skAnalysisTicker}
         onClose={() => setSkAnalysisTicker(null)}
       />
+
+      <IepDetailModal
+        ticker={iepDetailTicker}
+        onClose={() => setIepDetailTicker(null)}
+      />
+
+      {/* Dialog info parameter BPJS screener */}
+      {(() => {
+        const mod = screeningModules.find(m => m.id === infoModule);
+        return (
+          <Dialog open={!!infoModule} onOpenChange={open => { if (!open) setInfoModule(null); }}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-sm">{mod?.title}</DialogTitle>
+                {mod?.description && (
+                  <DialogDescription className="text-xs text-muted-foreground">{mod.description}</DialogDescription>
+                )}
+              </DialogHeader>
+              {mod && (
+                <div className="space-y-3 py-1">
+                  <p className="text-xs font-semibold text-foreground">Parameter / Kriteria</p>
+                  <ul className="space-y-1.5">
+                    {mod.criteria.map((c, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="mt-0.5 shrink-0 h-4 w-4 rounded-full bg-green-500/10 text-green-400 flex items-center justify-center text-[9px] font-bold">{i + 1}</span>
+                        <span className="text-xs text-foreground font-mono">{c}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
       </>)}
     </div>
   );

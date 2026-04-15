@@ -49,6 +49,7 @@ export interface Stock {
   prevBollingerBottom: number;
   prevClose2BollingerBottom: boolean;
   smaVol20: number;
+  prevSma5: number;
 }
 
 export const mockStocks: Stock[] = [];
@@ -170,7 +171,7 @@ export const screeningModules: ScreeningModule[] = [
       s.price > s.prevClose &&
       s.price > s.sma5 &&
       s.value > 5_000_000_000 &&
-      (s.prevClose > 0 && (s.high / s.prevClose) >= 1.10),
+      (s.prevClose > 0 && (s.price / s.prevClose) >= 1.10),
     badgeColor: "gain",
     category: "technical",
   },
