@@ -1,13 +1,14 @@
 import { forwardRef } from 'react';
 import { getPO } from '@/lib/noc/classifiers';
 import { getEffectiveTargetOnlineDB } from '@/lib/noc/queries';
-import type { TTRecordDB, PO } from '@/lib/noc/types';
+import type { TTRecordDB, PO, SiteNote } from '@/lib/noc/types';
 
 interface RecapCaptureModeProps {
   records: TTRecordDB[];
   poList: PO[];
   selectedDate: string;
   lastUploadTime?: string;
+  siteNotes?: SiteNote[];
   /** 'standalone' (default): render outer wrapper + header. 'section': hanya 2-kolom layout tanpa wrapper/header. */
   renderMode?: 'standalone' | 'section';
 }
@@ -164,7 +165,7 @@ const S = {
 
 // ─── RecapColumn ─────────────────────────────────────────────────────────────
 
-function RecapColumn({ groups }: { groups: POGroup[] }) {
+function RecapColumn({ groups, siteNotesMap }: { groups: POGroup[]; siteNotesMap: Map<string, string> }) {
   return (
     <div>
       {/* Column header */}
@@ -197,84 +198,106 @@ function RecapColumn({ groups }: { groups: POGroup[] }) {
                     const effectiveTarget = getEffectiveTargetOnlineDB(r);
                     const isReschedule = !isClosed && !!r.reschedule_note;
                     const isVisit = isClosed && (r.tiket_internal ?? '').toUpperCase().includes('KUNJUNGAN');
+                    const siteNote = r.site_id ? siteNotesMap.get(r.site_id) : undefined;
 
                     if (isClosed) {
                       return (
-                        <div key={r.id} style={{ ...S.rowBase, textDecoration: 'line-through', color: '#FF0000' }}>
-                          <div style={{ ...S.cell, ...S.cellNameFlex }}>
-                            <span>{r.site_name}</span>
-                            {isVisit && (
-                              <span style={{
-                                marginLeft: '6px',
-                                fontSize: '10px',
-                                fontWeight: 'bold',
-                                color: '#7B1FA2',
-                                textDecoration: 'none',
-                              }}>[VISIT]</span>
-                            )}
+                        <div key={r.id}>
+                          <div style={{ ...S.rowBase, textDecoration: 'line-through', color: '#FF0000', borderBottom: siteNote ? 'none' : S.rowBase.borderBottom }}>
+                            <div style={{ ...S.cell, ...S.cellNameFlex }}>
+                              <span>{r.site_name}</span>
+                              {isVisit && (
+                                <span style={{
+                                  marginLeft: '6px',
+                                  fontSize: '10px',
+                                  fontWeight: 'bold',
+                                  color: '#7B1FA2',
+                                  textDecoration: 'none',
+                                }}>[VISIT]</span>
+                              )}
+                            </div>
+                            <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
+                            <div style={{ ...S.cell, ...S.cellTarget }}>CLOSED</div>
                           </div>
-                          <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
-                          <div style={{ ...S.cell, ...S.cellTarget }}>CLOSED</div>
+                          {siteNote && (
+                            <div style={{ padding: '2px 8px 5px 16px', borderBottom: '1px solid #eee', fontSize: '11px', color: '#1a1a1a', fontStyle: 'italic', fontWeight: '500' }}>
+                              » {siteNote}
+                            </div>
+                          )}
                         </div>
                       );
                     }
 
                     if (isReschedule) {
                       return (
-                        <div key={r.id} style={{
-                          display: 'table',
-                          width: '100%',
-                          borderBottom: '1px solid #eee',
-                          fontSize: '11px',
-                          color: '#000',
-                        }}>
+                        <div key={r.id}>
                           <div style={{
-                            display: 'table-cell',
-                            verticalAlign: 'middle',
-                            padding: '4px 8px',
+                            display: 'table',
+                            width: '100%',
+                            borderBottom: siteNote ? 'none' : '1px solid #eee',
+                            fontSize: '11px',
+                            color: '#000',
                           }}>
-                            <span>{r.site_name}</span>
-                            <span style={{
-                              marginLeft: '6px',
-                              fontSize: '10px',
-                              fontWeight: 'bold',
-                              color: '#D97706',
-                            }}>[RESCHEDULE]</span>
+                            <div style={{
+                              display: 'table-cell',
+                              verticalAlign: 'middle',
+                              padding: '4px 8px',
+                            }}>
+                              <span>{r.site_name}</span>
+                              <span style={{
+                                marginLeft: '6px',
+                                fontSize: '10px',
+                                fontWeight: 'bold',
+                                color: '#D97706',
+                              }}>[RESCHEDULE]</span>
+                            </div>
+                            <div style={{
+                              display: 'table-cell',
+                              verticalAlign: 'middle',
+                              width: '95px',
+                              textAlign: 'center',
+                              padding: '4px 8px',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              {r.down_time}
+                            </div>
+                            <div style={{
+                              display: 'table-cell',
+                              verticalAlign: 'middle',
+                              width: '110px',
+                              textAlign: 'center',
+                              backgroundColor: '#FFF176',
+                              fontSize: '9px',
+                              lineHeight: '1.4',
+                              padding: '3px 6px',
+                            }}>
+                              <div>{r.reschedule_note}</div>
+                              {effectiveTarget && (
+                                <div style={{ color: '#5D4037', fontWeight: 'bold' }}>({effectiveTarget})</div>
+                              )}
+                            </div>
                           </div>
-                          <div style={{
-                            display: 'table-cell',
-                            verticalAlign: 'middle',
-                            width: '95px',
-                            textAlign: 'center',
-                            padding: '4px 8px',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            {r.down_time}
-                          </div>
-                          <div style={{
-                            display: 'table-cell',
-                            verticalAlign: 'middle',
-                            width: '110px',
-                            textAlign: 'center',
-                            backgroundColor: '#FFF176',
-                            fontSize: '9px',
-                            lineHeight: '1.4',
-                            padding: '3px 6px',
-                          }}>
-                            <div>{r.reschedule_note}</div>
-                            {effectiveTarget && (
-                              <div style={{ color: '#5D4037', fontWeight: 'bold' }}>({effectiveTarget})</div>
-                            )}
-                          </div>
+                          {siteNote && (
+                            <div style={{ padding: '2px 8px 5px 16px', borderBottom: '1px solid #eee', fontSize: '11px', color: '#1a1a1a', fontStyle: 'italic', fontWeight: '500' }}>
+                              » {siteNote}
+                            </div>
+                          )}
                         </div>
                       );
                     }
 
                     return (
-                      <div key={r.id} style={S.rowBase}>
-                        <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
-                        <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
-                        <div style={{ ...S.cell, ...S.cellTarget }}>{effectiveTarget || '—'}</div>
+                      <div key={r.id}>
+                        <div style={{ ...S.rowBase, borderBottom: siteNote ? 'none' : S.rowBase.borderBottom }}>
+                          <div style={{ ...S.cell, ...S.cellNameFlex }}>{r.site_name}</div>
+                          <div style={{ ...S.cell, ...S.cellDowntime }}>{r.down_time}</div>
+                          <div style={{ ...S.cell, ...S.cellTarget }}>{effectiveTarget || '—'}</div>
+                        </div>
+                        {siteNote && (
+                          <div style={{ padding: '2px 8px 5px 16px', borderBottom: '1px solid #eee', fontSize: '11px', color: '#1a1a1a', fontStyle: 'italic', fontWeight: '500' }}>
+                            » {siteNote}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -291,9 +314,10 @@ function RecapColumn({ groups }: { groups: POGroup[] }) {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const RecapCaptureMode = forwardRef<HTMLDivElement, RecapCaptureModeProps>(
-  ({ records, poList, selectedDate, lastUploadTime, renderMode = 'standalone' }, ref) => {
+  ({ records, poList, selectedDate, lastUploadTime, siteNotes = [], renderMode = 'standalone' }, ref) => {
     const groups = groupByPO(records, poList);
     const [leftGroups, rightGroups] = splitPOsToColumns(groups);
+    const siteNotesMap = new Map(siteNotes.map((n) => [n.site_id, n.note]));
 
     const openCount = records.filter((r) => r.status === 'OPEN').length;
     const closedCount = records.filter((r) => r.status === 'CLOSED').length;
@@ -302,7 +326,7 @@ export const RecapCaptureMode = forwardRef<HTMLDivElement, RecapCaptureModeProps
       <div style={{ display: 'flex', alignItems: 'stretch' }}>
         {/* Left column */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <RecapColumn groups={leftGroups} />
+          <RecapColumn groups={leftGroups} siteNotesMap={siteNotesMap} />
         </div>
 
         {/* Red divider */}
@@ -310,7 +334,7 @@ export const RecapCaptureMode = forwardRef<HTMLDivElement, RecapCaptureModeProps
 
         {/* Right column */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <RecapColumn groups={rightGroups} />
+          <RecapColumn groups={rightGroups} siteNotesMap={siteNotesMap} />
         </div>
       </div>
     );

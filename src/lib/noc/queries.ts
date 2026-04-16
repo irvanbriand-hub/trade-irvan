@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import type { NOCSummary, TTRecord, MergeResult, TTRecordDB } from './types';
+import type { NOCSummary, TTRecord, MergeResult, TTRecordDB, SiteNote } from './types';
 
 /** Konvert DD/M/YYYY atau DD/MM/YYYY ke YYYY-MM-DD untuk PostgreSQL. */
 function toISODate(dateStr: string): string {
@@ -299,4 +299,57 @@ export function getEffectiveTargetOnlineDB(record: TTRecordDB): string {
     return record.target_online_edited;
   }
   return record.target_online_original ?? '';
+}
+
+/**
+ * Reset reschedule edit — hapus target_online_edited, reschedule_note, set is_manually_edited = false.
+ */
+export async function resetTTRecordEdit(ticketId: string): Promise<void> {
+  // @ts-ignore
+  const { error } = await supabase
+    .from('tt_records')
+    .update({
+      target_online_edited: null,
+      reschedule_note: null,
+      is_manually_edited: false,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('ticket_id', ticketId);
+
+  if (error) throw error;
+}
+
+// ─── Site Notes ──────────────────────────────────────────────────────────────
+
+/**
+ * Fetch semua site notes (load sekali, cache di context).
+ */
+export async function getSiteNotes(): Promise<SiteNote[]> {
+  // @ts-ignore — site_notes belum ada di generated Database types
+  const { data } = await supabase.from('site_notes').select('*');
+  return (data as SiteNote[]) || [];
+}
+
+/**
+ * Upsert note (insert atau update berdasarkan site_id).
+ */
+export async function upsertSiteNote(
+  siteId: string,
+  siteName: string,
+  note: string,
+): Promise<void> {
+  // @ts-ignore
+  const { error } = await supabase
+    .from('site_notes')
+    .upsert({ site_id: siteId, site_name: siteName, note }, { onConflict: 'site_id' });
+  if (error) throw error;
+}
+
+/**
+ * Delete note permanen berdasarkan site_id.
+ */
+export async function deleteSiteNote(siteId: string): Promise<void> {
+  // @ts-ignore
+  const { error } = await supabase.from('site_notes').delete().eq('site_id', siteId);
+  if (error) throw error;
 }

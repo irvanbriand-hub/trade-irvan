@@ -296,28 +296,51 @@ function findPOName(provinsi: string, kabupaten: string, poList: POEntry[]): str
   return byProv?.name ?? '-';
 }
 
-async function generateOverdueText(): Promise<string> {
+async function generateOverdueText({
+  minAging = 0,
+  showClosed = false,
+}: {
+  minAging?: number;
+  showClosed?: boolean;
+} = {}): Promise<string> {
+  let query = supabaseAdmin
+    .from('tt_records')
+    .select('ticket_id, site_name, provinsi, kabupaten, down_time, status')
+    .order('down_time', { ascending: false });
+
+  if (!showClosed) {
+    query = query.eq('status', 'OPEN');
+  }
+
+  if (minAging > 0) {
+    query = query.gte('down_time', minAging);
+  }
+
   const [recordsRes, poRes] = await Promise.all([
-    supabaseAdmin
-      .from('tt_records')
-      .select('ticket_id, site_name, provinsi, kabupaten, down_time, status')
-      .eq('status', 'OPEN')
-      .order('down_time', { ascending: false }),
-    supabaseAdmin
-      .from('po_list')
-      .select('name, kabupaten_coverage, provinsi_coverage, status'),
+    query,
+    supabaseAdmin.from('po_list').select('name, kabupaten_coverage, provinsi_coverage, status'),
   ]);
 
   if (recordsRes.error || !recordsRes.data) return '❌ Gagal mengambil data overdue.';
-  if (!recordsRes.data.length) return '✅ Tidak ada TT overdue saat ini.';
 
   const records = recordsRes.data;
   const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
   const today = format(new Date(), 'dd/MM/yyyy');
   const SEP = '=========================';
 
-  let text = `📋 *TT Overdue — ${today}*\n\n`;
+  if (!records.length) {
+    return minAging > 0
+      ? `✅ Tidak ada TT overdue ≥${minAging} hari.`
+      : '✅ Tidak ada TT open saat ini.';
+  }
 
+  const title = showClosed
+    ? `📋 *TT Progress — ${today}*`
+    : minAging > 0
+    ? `📋 *TT Overdue ≥${minAging} Hari — ${today}*`
+    : `📋 *TT Overdue — ${today}*`;
+
+  let text = `${title}\n\n`;
   let currentAging = -1;
   let counter = 1;
 
@@ -333,7 +356,7 @@ async function generateOverdueText(): Promise<string> {
     counter++;
   }
 
-  text += `Total: ${records.length} TT open`;
+  text += `Total: ${records.length} TT`;
 
   if (text.length > 4000) {
     text = text.substring(0, 4000) + '\n... terpotong';
@@ -341,33 +364,234 @@ async function generateOverdueText(): Promise<string> {
   return text;
 }
 
+async function generateOverdueSummary(): Promise<string> {
+  const [recordsRes, poRes] = await Promise.all([
+    supabaseAdmin
+      .from('tt_records')
+      .select('ticket_id, site_name, provinsi, kabupaten, down_time')
+      .eq('status', 'OPEN')
+      .gte('down_time', 8)
+      .order('down_time', { ascending: false }),
+    supabaseAdmin.from('po_list').select('name, kabupaten_coverage, provinsi_coverage, status'),
+  ]);
+
+  if (recordsRes.error || !recordsRes.data?.length) return '✅ Tidak ada TT overdue saat ini.';
+
+  const records = recordsRes.data;
+  const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
+  const today = format(new Date(), 'dd/MM/yyyy');
+
+  const poCount: Record<string, number> = {};
+  for (const r of records) {
+    const name = findPOName(r.provinsi ?? '', r.kabupaten ?? '', poList);
+    poCount[name] = (poCount[name] || 0) + 1;
+  }
+  const topPO = Object.entries(poCount).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const provCount: Record<string, number> = {};
+  for (const r of records) {
+    const p = r.provinsi ?? '-';
+    provCount[p] = (provCount[p] || 0) + 1;
+  }
+  const topProv = Object.entries(provCount).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  const agings = records.map((r: any) => r.down_time);
+  const maxAging = Math.max(...agings);
+  const avgAging = Math.round(agings.reduce((a: number, b: number) => a + b, 0) / agings.length);
+  const oldest = records[0];
+  const oldestPO = findPOName(oldest.provinsi ?? '', oldest.kabupaten ?? '', poList);
+  const overdue30 = records.filter((r: any) => r.down_time >= 30).length;
+
+  return `📊 *Overdue Summary — ${today}*
+
+⚠️ *Total Overdue ≥8h:* ${records.length} TT
+🚨 *Overdue ≥30h:* ${overdue30} TT
+
+👤 *Top PO beban terberat:*
+${topPO.map(([name, count], i) => `  ${i + 1}. ${name} — ${count} TT`).join('\n')}
+
+🗺 *Provinsi terdampak:*
+${topProv.map(([prov, count], i) => `  ${i + 1}. ${prov} — ${count} TT`).join('\n')}
+
+📅 *Aging tertua:* ${maxAging} hari
+   ${oldest.site_name} (PO: ${oldestPO})
+📈 *Rata-rata aging:* ${avgAging} hari`;
+}
+
+async function generateOverduePrediksi(): Promise<string> {
+  const [recordsRes, poRes] = await Promise.all([
+    supabaseAdmin
+      .from('tt_records')
+      .select('ticket_id, site_name, provinsi, kabupaten, down_time')
+      .eq('status', 'OPEN')
+      .in('down_time', [6, 7])
+      .order('down_time', { ascending: false }),
+    supabaseAdmin.from('po_list').select('name, kabupaten_coverage, provinsi_coverage, status'),
+  ]);
+
+  const records = recordsRes.data ?? [];
+  const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
+  const today = format(new Date(), 'dd/MM/yyyy');
+
+  if (!records.length) {
+    return `✅ Tidak ada TT yang mendekati overdue (aging 6-7 hari) — ${today}`;
+  }
+
+  const SEP = '=========================';
+  let text = `🔮 *Prediksi Overdue — ${today}*\n_Site berikut akan overdue dalam 1-2 hari:_\n\n`;
+  let currentAging = -1;
+  let counter = 1;
+
+  for (const record of records) {
+    if (record.down_time !== currentAging) {
+      currentAging = record.down_time;
+      text += `Aging ${currentAging} Hari\n${SEP}\n`;
+    }
+    const poName = findPOName(record.provinsi ?? '', record.kabupaten ?? '', poList);
+    text += `${counter}. ${record.ticket_id} - ${record.site_name} ❌\n`;
+    text += `> *PO*: ${poName} | ${record.provinsi ?? '-'}\n\n`;
+    counter++;
+  }
+
+  text += `⚡ Total: ${records.length} TT akan segera overdue`;
+  return text;
+}
+
+/** Parse "DD/MM/YY" atau "DD/MM/YYYY" → Date. Null jika tidak valid. */
+function parseDMY(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return null;
+  const [d, m, y] = parts;
+  const year = y.length === 2 ? 2000 + parseInt(y, 10) : parseInt(y, 10);
+  const date = new Date(year, parseInt(m, 10) - 1, parseInt(d, 10));
+  return isNaN(date.getTime()) ? null : date;
+}
+
+async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<string> {
+  const [recordsRes, poRes] = await Promise.all([
+    supabaseAdmin
+      .from('tt_records')
+      .select('ticket_id, site_name, provinsi, kabupaten, target_online_original, status'),
+    supabaseAdmin.from('po_list').select('name, kabupaten_coverage, provinsi_coverage, status'),
+  ]);
+
+  const allRecords = recordsRes.data ?? [];
+  const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
+
+  const fromStart = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+  const toEnd = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59);
+
+  const inRange = allRecords.filter((r: any) => {
+    const d = parseDMY(r.target_online_original ?? '');
+    return d && d >= fromStart && d <= toEnd;
+  });
+
+  const poNames = new Set<string>();
+  for (const r of inRange) {
+    const name = findPOName(r.provinsi ?? '', r.kabupaten ?? '', poList);
+    if (name !== '-') poNames.add(name);
+  }
+
+  const isSingleDay = fromStart.getTime() === new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate()).getTime();
+  const dateLabel = isSingleDay
+    ? format(fromDate, 'dd/MM/yy')
+    : `${format(fromDate, 'dd/MM/yy')} - ${format(toDate, 'dd/MM/yy')}`;
+
+  const poListStr = [...poNames].sort().join(', ') || '-';
+
+  return `Dear all, berikut update progress penyelesaian tiket target online hari ini (${dateLabel}) dengan target online yang sudah disesuaikan dengan WM terakhir.\nTerimakasih 🙏\n\nPO: ${poListStr}`;
+}
+
 // ─── Command router ───────────────────────────────────────────────────────────
 
-async function processCommand(command: string, chatId: string) {
+const COMMAND_LIST = `📋 *NOC Bot Commands:*
+
+*/target* — Capture hari ini
+*/target 1\\-5* — Capture \\+ N hari ke depan
+
+*/overdue* — Semua TT open
+*/overdue 8* — Overdue ≥ 8 hari
+*/overdue 5* — Overdue ≥ 5 hari
+*/overdue progress* — Open \\+ Closed dengan status
+*/overdue summary* — Statistik ringkas overdue
+*/overdue prediksi* — Site hampir overdue \\(6\\-7 hari\\)
+
+*/summary* — KPI ringkasan`;
+
+async function processCommand(text: string, chatId: string) {
+  const parts = text.trim().split(/\s+/);
+  const command = parts[0].toLowerCase();
+  const arg = (parts[1] ?? '').toLowerCase();
+
   switch (command) {
+
+    case '/target': {
+      const days = Math.min(parseInt(arg) || 0, 5);
+      await sendTelegramMessage(chatId, '⏳ Syncing data dari Google Sheet...');
+      try {
+        await syncFromGoogleSheet();
+      } catch (err: any) {
+        await sendTelegramMessage(chatId, `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`);
+      }
+      await sendTelegramMessage(chatId, '📡 Data diupdate. Generating capture...');
+
+      const today = new Date();
+      const toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days);
+      const from = format(today, 'yyyy-MM-dd');
+      const to = format(toDate, 'yyyy-MM-dd');
+      const captureUrl = `${APP_URL}/noc/capture?type=multiday&from=${from}&to=${to}`;
+
+      await sendCaptureToTelegram(chatId, captureUrl);
+
+      const narrative = await generateTargetNarrative(today, toDate);
+      await sendTelegramMessage(chatId, narrative);
+      break;
+    }
+
+    // Legacy aliases — tetap berjalan
     case '/targettoday':
       await syncAndCapture(chatId, `${APP_URL}/noc/capture?type=daily&date=today`);
-      break;
-    case '/target-2':
-      await syncAndCapture(chatId, `${APP_URL}/noc/capture?type=daily&date=tomorrow`);
-      break;
-    case '/target-3':
-      await syncAndCapture(chatId, `${APP_URL}/noc/capture?type=daily&date=2days`);
       break;
     case '/closedtoday':
       await syncAndCapture(chatId, `${APP_URL}/noc/capture?type=closed`);
       break;
+
+    case '/overdue': {
+      let overdueText = '';
+      switch (arg) {
+        case '8':
+          overdueText = await generateOverdueText({ minAging: 8 });
+          break;
+        case '5':
+          overdueText = await generateOverdueText({ minAging: 5 });
+          break;
+        case 'progress':
+          overdueText = await generateOverdueText({ showClosed: true });
+          break;
+        case 'summary':
+          overdueText = await generateOverdueSummary();
+          break;
+        case 'prediksi':
+          overdueText = await generateOverduePrediksi();
+          break;
+        default:
+          overdueText = await generateOverdueText({ minAging: 0 });
+      }
+      await sendTelegramMessage(chatId, overdueText);
+      break;
+    }
+
     case '/summary': {
       const summaryText = await generateSummaryText();
       await sendTelegramMessage(chatId, summaryText);
       break;
     }
-    case '/overdue': {
-      const overdueText = await generateOverdueText();
-      await sendTelegramMessage(chatId, overdueText);
-      break;
-    }
+
     default:
+      if (text.startsWith('/')) {
+        await sendTelegramMessage(chatId, COMMAND_LIST);
+      }
       break;
   }
 }
@@ -387,9 +611,7 @@ export default async function handler(req: any, res: any) {
 
   if (chatId !== allowedChatId) return res.status(200).end();
 
-  const command = text.split(' ')[0].toLowerCase();
-
-  await processCommand(command, allowedChatId!);
+  await processCommand(text, allowedChatId!);
 
   return res.status(200).json({ ok: true });
 }

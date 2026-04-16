@@ -3,14 +3,15 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   type ReactNode,
 } from 'react';
 import { format } from 'date-fns';
 import { useQueryClient } from '@tanstack/react-query';
 import { parseTSV } from '../tsvParser';
 import { computeSummary } from '../classifiers';
-import { saveUploadHistory, mergeTSVToSupabase, resetTTRecords } from '../queries';
-import type { TTRecord, PO, NOCSummary, MergeResult } from '../types';
+import { saveUploadHistory, mergeTSVToSupabase, resetTTRecords, getSiteNotes } from '../queries';
+import type { TTRecord, PO, NOCSummary, MergeResult, SiteNote } from '../types';
 
 interface NOCContextValue {
   rawData: TTRecord[];
@@ -19,6 +20,9 @@ interface NOCContextValue {
   summary: NOCSummary | null;
   isLoading: boolean;
   mergeResult: MergeResult | null;
+  siteNotes: SiteNote[];
+  refreshSiteNotes: () => Promise<void>;
+  getSiteNote: (siteId: string) => SiteNote | null;
   loadFromRecords: (records: TTRecord[], date: string) => Promise<void>;
   loadTSV: (raw: string, poList: PO[], date: string) => Promise<void>;
   clearData: () => void;
@@ -34,7 +38,24 @@ export function NOCProvider({ children }: { children: ReactNode }) {
   const [summary, setSummary] = useState<NOCSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [mergeResult, setMergeResult] = useState<MergeResult | null>(null);
+  const [siteNotes, setSiteNotes] = useState<SiteNote[]>([]);
   const qc = useQueryClient();
+
+  const refreshSiteNotes = useCallback(async () => {
+    const notes = await getSiteNotes();
+    setSiteNotes(notes);
+  }, []);
+
+  const getSiteNote = useCallback(
+    (siteId: string): SiteNote | null =>
+      siteNotes.find((n) => n.site_id === siteId) ?? null,
+    [siteNotes],
+  );
+
+  // Load site notes on mount
+  useEffect(() => {
+    refreshSiteNotes().catch(() => {});
+  }, [refreshSiteNotes]);
 
   const loadFromRecords = useCallback(async (records: TTRecord[], date: string) => {
     setIsLoading(true);
@@ -76,7 +97,7 @@ export function NOCProvider({ children }: { children: ReactNode }) {
   }, [clearData]);
 
   return (
-    <NOCContext.Provider value={{ rawData, uploadDate, lastUploadTime, summary, isLoading, mergeResult, loadFromRecords, loadTSV, clearData, resetData }}>
+    <NOCContext.Provider value={{ rawData, uploadDate, lastUploadTime, summary, isLoading, mergeResult, siteNotes, refreshSiteNotes, getSiteNote, loadFromRecords, loadTSV, clearData, resetData }}>
       {children}
     </NOCContext.Provider>
   );

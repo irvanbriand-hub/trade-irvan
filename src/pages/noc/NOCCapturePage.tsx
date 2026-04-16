@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { format, addDays, parseISO } from 'date-fns';
+import { format, addDays, parseISO, startOfDay, isAfter } from 'date-fns';
+import { id } from 'date-fns/locale';
 import { useTTRecords } from '@/lib/noc/hooks/useTTRecords';
 import { usePOList } from '@/lib/noc/hooks/usePOList';
+import { useNOC } from '@/lib/noc/hooks/useNOC';
 import { normalizeDate } from '@/lib/noc/queries';
 import { RecapCaptureMode } from '@/components/noc/RecapCaptureMode';
 import { ClosedTodayCaptureMode } from '@/components/noc/ClosedTodayCaptureMode';
 import type { ClosedTodayKPI } from '@/components/noc/ClosedTodayCaptureMode';
-import type { TTRecordDB } from '@/lib/noc/types';
+import type { TTRecordDB, SiteNote } from '@/lib/noc/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,79 @@ interface KPIData {
 
 function toFilterKey(date: Date): string {
   return format(date, 'dd/MM/yyyy');
+}
+
+function getDatesBetween(from: Date, to: Date): Date[] {
+  const dates: Date[] = [];
+  let current = startOfDay(from);
+  const end = startOfDay(to);
+  while (!isAfter(current, end)) {
+    dates.push(current);
+    current = addDays(current, 1);
+  }
+  return dates;
+}
+
+function MultidaySection({
+  date,
+  records,
+  poList,
+  siteNotes,
+  isFirst,
+}: {
+  date: Date;
+  records: TTRecordDB[];
+  poList: ReturnType<typeof Array.from>;
+  siteNotes: SiteNote[];
+  isFirst: boolean;
+}) {
+  const key = toFilterKey(date);
+  const dateRecords = records.filter(
+    (r) => normalizeDate(r.target_online_original ?? '') === key,
+  );
+  if (dateRecords.length === 0) return null;
+
+  const openCount = dateRecords.filter((r) => r.status === 'OPEN').length;
+  const closedCount = dateRecords.filter((r) => r.status === 'CLOSED').length;
+  const dayName = format(date, 'EEEE', { locale: id });
+  const dateFormatted = format(date, 'dd MMMM yyyy', { locale: id });
+
+  return (
+    <div>
+      {!isFirst && <div style={{ height: '2px', backgroundColor: '#e2e8f0' }} />}
+      <div style={{
+        padding: '8px 16px',
+        backgroundColor: '#334155',
+        color: '#ffffff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '4px', height: '20px', backgroundColor: '#06b6d4', borderRadius: '2px' }} />
+          <span style={{ fontSize: '13px', fontWeight: '700' }}>{dayName}, {dateFormatted}</span>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <span style={{ backgroundColor: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: '700' }}>
+            🔴 {openCount} Open
+          </span>
+          <span style={{ backgroundColor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: '700' }}>
+            ✅ {closedCount} Closed
+          </span>
+          <span style={{ backgroundColor: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '2px 8px', fontSize: '11px', fontWeight: '700' }}>
+            📋 {dateRecords.length} Total
+          </span>
+        </div>
+      </div>
+      <RecapCaptureMode
+        records={dateRecords}
+        poList={poList as any}
+        selectedDate={key}
+        renderMode="section"
+        siteNotes={siteNotes}
+      />
+    </div>
+  );
 }
 
 function getCloseType(r: TTRecordDB): 'noc' | 'om' | 'om-visit' | null {
@@ -193,9 +268,12 @@ export default function NOCCapturePage() {
   const [searchParams] = useSearchParams();
   const type = searchParams.get('type') || 'daily';
   const dateParam = searchParams.get('date') || 'today';
+  const fromParam = searchParams.get('from');
+  const toParam = searchParams.get('to');
 
   const { data: allRecords = [], isLoading: loadingRecords } = useTTRecords();
   const { data: poList = [], isLoading: loadingPO } = usePOList();
+  const { siteNotes } = useNOC();
 
   const isLoading = loadingRecords || loadingPO;
 
@@ -209,6 +287,15 @@ export default function NOCCapturePage() {
       return new Date();
     }
   }, [dateParam]);
+
+  const multidayRange = useMemo(() => {
+    if (type !== 'multiday' || !fromParam || !toParam) return null;
+    try {
+      return { from: parseISO(fromParam), to: parseISO(toParam) };
+    } catch {
+      return null;
+    }
+  }, [type, fromParam, toParam]);
 
   const filterKey = toFilterKey(targetDate);
 
@@ -274,6 +361,7 @@ export default function NOCCapturePage() {
             records={dailyRecords}
             poList={poList}
             selectedDate={filterKey}
+            siteNotes={siteNotes}
           />
         </>
       )}
@@ -287,6 +375,18 @@ export default function NOCCapturePage() {
             kpi={closedKPI}
           />
         </>
+      )}
+      {type === 'multiday' && multidayRange && (
+        getDatesBetween(multidayRange.from, multidayRange.to).map((date, idx) => (
+          <MultidaySection
+            key={date.toISOString()}
+            date={date}
+            records={allRecords}
+            poList={poList}
+            siteNotes={siteNotes}
+            isFirst={idx === 0}
+          />
+        ))
       )}
     </div>
   );

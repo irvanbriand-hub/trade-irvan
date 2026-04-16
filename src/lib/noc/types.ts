@@ -98,6 +98,15 @@ export interface TTRecordDB {
   last_updated: string;
 }
 
+export interface SiteNote {
+  id: string;
+  site_id: string;
+  site_name: string | null;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface MergeResult {
   inserted: number;
   updated: number;

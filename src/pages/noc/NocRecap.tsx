@@ -16,7 +16,7 @@ import { RecapTable } from '@/components/noc/RecapTable';
 import { RecapCaptureMode } from '@/components/noc/RecapCaptureMode';
 import { ClosedTodayCaptureMode } from '@/components/noc/ClosedTodayCaptureMode';
 import type { ClosedTodayKPI } from '@/components/noc/ClosedTodayCaptureMode';
-import type { TTRecordDB, PO } from '@/lib/noc/types';
+import type { TTRecordDB, PO, SiteNote } from '@/lib/noc/types';
 
 
 function toFilterKey(date: Date): string {
@@ -138,9 +138,10 @@ interface DateSectionProps {
   records: TTRecordDB[];
   poList: PO[];
   isFirst: boolean;
+  siteNotes?: SiteNote[];
 }
 
-function DateSectionCapture({ date, records, poList, isFirst }: DateSectionProps) {
+function DateSectionCapture({ date, records, poList, isFirst, siteNotes }: DateSectionProps) {
   const dateRecords = records.filter((r) => {
     const key = normalizeDate(r.target_online_original ?? '');
     return key === toFilterKey(date);
@@ -208,6 +209,7 @@ function DateSectionCapture({ date, records, poList, isFirst }: DateSectionProps
         poList={poList}
         selectedDate={toFilterKey(date)}
         renderMode="section"
+        siteNotes={siteNotes}
       />
     </div>
   );
@@ -371,7 +373,7 @@ export default function NocRecap() {
 
   const { data: allRecords = [], isLoading } = useTTRecords();
   const { data: poList = [] } = usePOList();
-  const { lastUploadTime } = useNOC();
+  const { lastUploadTime, siteNotes } = useNOC();
 
   // Pastikan selectedTabDate selalu dalam range saat range berubah
   useEffect(() => {
@@ -871,6 +873,7 @@ export default function NocRecap() {
                   records={allRecords}
                   poList={poList}
                   isFirst={idx === 0}
+                  siteNotes={siteNotes}
                 />
               ))}
             </div>
@@ -920,6 +923,7 @@ export default function NocRecap() {
               records={allRecords}
               poList={poList}
               isFirst={idx === 0}
+              siteNotes={siteNotes}
             />
           ))}
         </div>

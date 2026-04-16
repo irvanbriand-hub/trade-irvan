@@ -1,11 +1,23 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Pencil, Check, X } from 'lucide-react';
+import { Pencil, Check, X, MessageSquare, RotateCcw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
 import { AREA_NAMES } from '@/lib/noc/constants';
 import { getPO } from '@/lib/noc/classifiers';
-import { useUpdateTTRecord } from '@/lib/noc/hooks/useTTRecords';
+import { useUpdateTTRecord, useResetTTRecord } from '@/lib/noc/hooks/useTTRecords';
+import { upsertSiteNote, deleteSiteNote } from '@/lib/noc/queries';
+import { useNOC } from '@/lib/noc/hooks/useNOC';
 import type { TTRecordDB, PO } from '@/lib/noc/types';
 
 interface RecapTableProps {
@@ -74,8 +86,13 @@ interface EditState {
 
 function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted?: boolean }) {
   const { mutate: updateRecord, isPending } = useUpdateTTRecord();
+  const { mutate: resetRecord } = useResetTTRecord();
+  const { getSiteNote, refreshSiteNotes } = useNOC();
+  const siteNote = record.site_id ? getSiteNote(record.site_id) : null;
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditState>({ targetOnline: '', rescheduleNote: '' });
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [noteInput, setNoteInput] = useState('');
 
   const isClosed = record.status === 'CLOSED';
   const isReschedule = !!record.reschedule_note;
@@ -175,15 +192,92 @@ function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted
               </p>
             )}
           </div>
-          {/* Edit button — visible on hover */}
-          <button
-            onClick={startEdit}
-            className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground mt-0.5"
-          >
-            <Pencil className="h-3 w-3" />
-          </button>
+          {/* Action buttons — visible on hover */}
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shrink-0 mt-0.5">
+            <button
+              onClick={startEdit}
+              className="p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+              title="Edit target online / reschedule"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+            {record.is_manually_edited && (
+              <button
+                onClick={() => resetRecord({ id: record.id, ticket_id: record.ticket_id })}
+                className="p-0.5 rounded hover:bg-destructive/20 text-amber-400 hover:text-amber-300"
+                title="Reset reschedule ke nilai original"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+            )}
+            <button
+              onClick={() => { setNoteInput(siteNote?.note ?? ''); setIsEditingNote(true); }}
+              className="p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+              title="Tambah/edit keterangan site"
+            >
+              <MessageSquare className={`h-3 w-3 ${siteNote ? 'text-sky-400' : ''}`} />
+            </button>
+            {siteNote && (
+              <button
+                onClick={async () => {
+                  if (!record.site_id) return;
+                  await deleteSiteNote(record.site_id);
+                  await refreshSiteNotes();
+                  toast.success('Keterangan dihapus');
+                }}
+                className="p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                title="Hapus keterangan"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
+        {/* Site note display */}
+        {siteNote && (
+          <p className="text-[10px] text-muted-foreground italic mt-0.5 leading-tight">
+            📝 {siteNote.note}
+          </p>
+        )}
       </td>
+
+      {/* Note dialog */}
+      <Dialog open={isEditingNote} onOpenChange={setIsEditingNote}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Keterangan Site</DialogTitle>
+            <DialogDescription>{record.site_name}</DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label>Keterangan</Label>
+            <Input
+              placeholder="contoh: Lokasi terpencil, akses kapal 2x seminggu"
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Keterangan ini permanen sampai dihapus manual.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditingNote(false)}>
+              Batal
+            </Button>
+            <Button
+              onClick={async () => {
+                if (!record.site_id || !noteInput.trim()) return;
+                await upsertSiteNote(record.site_id, record.site_name, noteInput.trim());
+                await refreshSiteNotes();
+                setIsEditingNote(false);
+                toast.success('Keterangan disimpan');
+              }}
+            >
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Target Online */}
       <td className="px-2 py-1 text-xs whitespace-nowrap align-top">
