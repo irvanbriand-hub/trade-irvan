@@ -562,9 +562,27 @@ async function processCommand(text: string, chatId: string) {
       break;
 
     case '/overdue': {
-      let overdueText = '';
       const num = parseInt(arg, 10);
-      if (!isNaN(num) && num > 0) {
+      const isNumeric = !isNaN(num) && num > 0;
+      const validKeywords = ['', 'progress', 'summary', 'prediksi'];
+
+      if (!isNumeric && !validKeywords.includes(arg)) {
+        await sendTelegramMessage(
+          chatId,
+          '⚠️ Argumen tidak valid. Gunakan /overdue, /overdue [angka], /overdue progress, /overdue summary, atau /overdue prediksi',
+        );
+        break;
+      }
+
+      await sendTelegramMessage(chatId, '⏳ Syncing data dari Google Sheet...');
+      try {
+        await syncFromGoogleSheet();
+      } catch (err: any) {
+        await sendTelegramMessage(chatId, `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`);
+      }
+
+      let overdueText = '';
+      if (isNumeric) {
         overdueText = await generateOverdueText({ minAging: num });
       } else {
         switch (arg) {
@@ -580,8 +598,6 @@ async function processCommand(text: string, chatId: string) {
           case 'prediksi':
             overdueText = await generateOverduePrediksi();
             break;
-          default:
-            overdueText = '⚠️ Argumen tidak valid. Gunakan /overdue, /overdue [angka], /overdue progress, /overdue summary, atau /overdue prediksi';
         }
       }
       await sendTelegramMessage(chatId, overdueText);
