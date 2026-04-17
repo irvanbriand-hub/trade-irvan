@@ -377,16 +377,19 @@ export default function NOCCapturePage() {
         </>
       )}
       {type === 'multiday' && multidayRange && (
-        getDatesBetween(multidayRange.from, multidayRange.to).map((date, idx) => (
-          <MultidaySection
-            key={date.toISOString()}
-            date={date}
-            records={allRecords}
-            poList={poList}
-            siteNotes={siteNotes}
-            isFirst={idx === 0}
-          />
-        ))
+        <>
+          <KPICaptureCards kpi={kpi} />
+          {getDatesBetween(multidayRange.from, multidayRange.to).map((date, idx) => (
+            <MultidaySection
+              key={date.toISOString()}
+              date={date}
+              records={allRecords}
+              poList={poList}
+              siteNotes={siteNotes}
+              isFirst={idx === 0}
+            />
+          ))}
+        </>
       )}
     </div>
   );

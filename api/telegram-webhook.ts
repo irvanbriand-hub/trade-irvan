@@ -505,19 +505,24 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
 
 // ─── Command router ───────────────────────────────────────────────────────────
 
-const COMMAND_LIST = `📋 *NOC Bot Commands:*
+const COMMAND_LIST = `📋 *NOC Bot — Command List*
 
-*/target* — Capture hari ini
-*/target 1\\-5* — Capture \\+ N hari ke depan
+*📸 Capture*
+/target — Recap target online hari ini
+/target 1 — Hari ini + besok
+/target 2 s/d 5 — Max 5 hari ke depan
 
-*/overdue* — Semua TT open
-*/overdue 8* — Overdue ≥ 8 hari
-*/overdue 5* — Overdue ≥ 5 hari
-*/overdue progress* — Open \\+ Closed dengan status
-*/overdue summary* — Statistik ringkas overdue
-*/overdue prediksi* — Site hampir overdue \\(6\\-7 hari\\)
+*📊 Overdue*
+/overdue — Semua TT open
+/overdue [n] — Aging ≥ n hari (contoh: /overdue 8)
+/overdue progress — Open & closed dengan status
+/overdue summary — Statistik ringkas
+/overdue prediksi — Site hampir overdue (6-7 hari)
 
-*/summary* — KPI ringkasan`;
+*📈 Summary*
+/summary — KPI ringkasan
+
+/help — Tampilkan daftar ini`;
 
 async function processCommand(text: string, chatId: string) {
   const parts = text.trim().split(/\s+/);
@@ -549,9 +554,8 @@ async function processCommand(text: string, chatId: string) {
       break;
     }
 
-    // Legacy aliases — tetap berjalan
     case '/targettoday':
-      await syncAndCapture(chatId, `${APP_URL}/noc/capture?type=daily&date=today`);
+      await sendTelegramMessage(chatId, 'Command ini sudah diganti. Gunakan /target');
       break;
     case '/closedtoday':
       await syncAndCapture(chatId, `${APP_URL}/noc/capture?type=closed`);
@@ -559,24 +563,26 @@ async function processCommand(text: string, chatId: string) {
 
     case '/overdue': {
       let overdueText = '';
-      switch (arg) {
-        case '8':
-          overdueText = await generateOverdueText({ minAging: 8 });
-          break;
-        case '5':
-          overdueText = await generateOverdueText({ minAging: 5 });
-          break;
-        case 'progress':
-          overdueText = await generateOverdueText({ showClosed: true });
-          break;
-        case 'summary':
-          overdueText = await generateOverdueSummary();
-          break;
-        case 'prediksi':
-          overdueText = await generateOverduePrediksi();
-          break;
-        default:
-          overdueText = await generateOverdueText({ minAging: 0 });
+      const num = parseInt(arg, 10);
+      if (!isNaN(num) && num > 0) {
+        overdueText = await generateOverdueText({ minAging: num });
+      } else {
+        switch (arg) {
+          case '':
+            overdueText = await generateOverdueText({ minAging: 0 });
+            break;
+          case 'progress':
+            overdueText = await generateOverdueText({ showClosed: true });
+            break;
+          case 'summary':
+            overdueText = await generateOverdueSummary();
+            break;
+          case 'prediksi':
+            overdueText = await generateOverduePrediksi();
+            break;
+          default:
+            overdueText = '⚠️ Argumen tidak valid. Gunakan /overdue, /overdue [angka], /overdue progress, /overdue summary, atau /overdue prediksi';
+        }
       }
       await sendTelegramMessage(chatId, overdueText);
       break;
@@ -587,6 +593,10 @@ async function processCommand(text: string, chatId: string) {
       await sendTelegramMessage(chatId, summaryText);
       break;
     }
+
+    case '/help':
+      await sendTelegramMessage(chatId, COMMAND_LIST);
+      break;
 
     default:
       if (text.startsWith('/')) {
