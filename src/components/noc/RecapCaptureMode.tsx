@@ -220,7 +220,7 @@ function RecapColumn({ groups, siteNotesMap }: { groups: POGroup[]; siteNotesMap
                             <div style={{ ...S.cell, ...S.cellTarget }}>CLOSED</div>
                           </div>
                           {siteNote && (
-                            <div style={{ padding: '2px 8px 5px 16px', borderBottom: '1px solid #eee', fontSize: '11px', color: '#1a1a1a', fontStyle: 'italic', fontWeight: '500' }}>
+                            <div style={{ backgroundColor: '#EFF6FF', borderLeft: '3px solid #3B82F6', padding: '4px 8px 4px 12px', fontSize: '10px', color: '#1e3a5f', fontStyle: 'italic', lineHeight: '1.4', borderBottom: '1px solid #eee' }}>
                               » {siteNote}
                             </div>
                           )}
@@ -278,7 +278,7 @@ function RecapColumn({ groups, siteNotesMap }: { groups: POGroup[]; siteNotesMap
                             </div>
                           </div>
                           {siteNote && (
-                            <div style={{ padding: '2px 8px 5px 16px', borderBottom: '1px solid #eee', fontSize: '11px', color: '#1a1a1a', fontStyle: 'italic', fontWeight: '500' }}>
+                            <div style={{ backgroundColor: '#EFF6FF', borderLeft: '3px solid #3B82F6', padding: '4px 8px 4px 12px', fontSize: '10px', color: '#1e3a5f', fontStyle: 'italic', lineHeight: '1.4', borderBottom: '1px solid #eee' }}>
                               » {siteNote}
                             </div>
                           )}
@@ -294,7 +294,7 @@ function RecapColumn({ groups, siteNotesMap }: { groups: POGroup[]; siteNotesMap
                           <div style={{ ...S.cell, ...S.cellTarget }}>{effectiveTarget || '—'}</div>
                         </div>
                         {siteNote && (
-                          <div style={{ padding: '2px 8px 5px 16px', borderBottom: '1px solid #eee', fontSize: '11px', color: '#1a1a1a', fontStyle: 'italic', fontWeight: '500' }}>
+                          <div style={{ backgroundColor: '#EFF6FF', borderLeft: '3px solid #3B82F6', padding: '4px 8px 4px 12px', fontSize: '10px', color: '#1e3a5f', fontStyle: 'italic', lineHeight: '1.4', borderBottom: '1px solid #eee' }}>
                             » {siteNote}
                           </div>
                         )}
