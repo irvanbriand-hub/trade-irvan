@@ -63,6 +63,45 @@ export default async function handler(req: any, res: any) {
 
     if (error) throw error;
 
+    // Format tanggal Indonesia
+    const bulanNames = [
+      'Januari','Februari','Maret','April','Mei','Juni',
+      'Juli','Agustus','September','Oktober','November','Desember'
+    ];
+    const now = new Date();
+    const tanggalFormatted = `${now.getDate()} ${bulanNames[now.getMonth()]} ${now.getFullYear()}`;
+
+    const message = `🔄 *Snapshot Harian — ${tanggalFormatted}*
+
+Data berhasil direkam pukul 23.00 WIB:
+
+🔢 Total TT Aktif: ${snapshot.total_tt} TT
+❌ Total Open: ${snapshot.total_open} TT
+✅ Total Closed: ${snapshot.total_closed} TT
+
+📊 Breakdown Open:
+⏳ Open < 30 Hari: ${snapshot.open_lt30} TT
+⛔ Open ≥ 30 Hari: ${snapshot.open_gt30} TT
+❌ Open ≥ 60 Hari: ${snapshot.open_gt60} TT
+
+📍 TT Baru Hari Ini: ${snapshot.new_open_today} TT
+⚠️ Overdue ≥ 8 Hari: ${snapshot.overdue_gte8} TT
+🚨 Overdue ≥ 30 Hari: ${snapshot.overdue_gte30} TT`;
+
+    // Kirim ke Telegram
+    await fetch(
+      `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: process.env.TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: 'Markdown',
+        }),
+      }
+    );
+
     return res.status(200).json({
       success: true,
       date: snapshot.snapshot_date,
