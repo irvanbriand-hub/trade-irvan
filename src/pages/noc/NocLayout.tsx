@@ -21,6 +21,7 @@ import NocDashboard from './NocDashboard';
 import NocRecap from './NocRecap';
 import NocGenerate from './NocGenerate';
 import NocPO from './NocPO';
+import NocSettings from './NocSettings';
 import NOCCapturePage from './NOCCapturePage';
 
 const tabs = [
@@ -28,6 +29,7 @@ const tabs = [
   { to: 'recap', label: 'Rekap', icon: '📋' },
   { to: 'generate', label: 'Generate', icon: '💬' },
   { to: 'po', label: 'PO', icon: '👤' },
+  { to: 'settings', label: 'Settings', icon: '⚙️' },
 ];
 
 function NocTabs() {
@@ -114,6 +116,7 @@ function TradeJournalButton() {
 function NocInner() {
   const { pathname } = useLocation();
   const isPOPage = pathname.endsWith('/po');
+  const isSettingsPage = pathname.endsWith('/settings');
 
   return (
     <div className="space-y-4">
@@ -132,8 +135,8 @@ function NocInner() {
         </div>
       </div>
 
-      {/* TSV Uploader — hidden on PO page */}
-      {!isPOPage && <TsvUploader />}
+      {/* TSV Uploader — hidden on PO & Settings page */}
+      {!isPOPage && !isSettingsPage && <TsvUploader />}
 
       {/* Tabs */}
       <NocTabs />
@@ -146,6 +149,7 @@ function NocInner() {
           <Route path="recap" element={<NocRecap />} />
           <Route path="generate" element={<NocGenerate />} />
           <Route path="po" element={<NocPO />} />
+          <Route path="settings" element={<NocSettings />} />
         </Routes>
       </div>
     </div>
