@@ -503,6 +503,58 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
   return `Dear all, berikut update progress penyelesaian tiket target online hari ini (${dateLabel}) dengan target online yang sudah disesuaikan dengan WM terakhir.\nTerimakasih 🙏\n\nPO: ${poListStr}`;
 }
 
+async function generateRekapPagi(): Promise<string> {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
+
+  const { data: snapshot } = await supabaseAdmin
+    .from('daily_snapshots')
+    .select('*')
+    .eq('snapshot_date', yesterdayStr)
+    .maybeSingle();
+
+  const { data: records } = await supabaseAdmin
+    .from('tt_records')
+    .select('status, down_time');
+
+  const open = (records ?? []).filter((r: any) => r.status === 'OPEN');
+  const newOpenToday = open.filter((r: any) => r.down_time === 1).length;
+  const totalTT = records?.length ?? 0;
+  const openLt30 = open.filter((r: any) => r.down_time < 30).length;
+  const openGt30 = open.filter((r: any) => r.down_time >= 30 && r.down_time < 60).length;
+  const openGt60 = open.filter((r: any) => r.down_time >= 60).length;
+
+  const { data: templateData } = await supabaseAdmin
+    .from('bot_templates')
+    .select('template_text')
+    .eq('template_key', 'rekap_pagi')
+    .maybeSingle();
+
+  const template = templateData?.template_text || '';
+
+  const now = new Date();
+  const hariNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const bulanNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ];
+  const hari = hariNames[now.getDay()];
+  const tanggal = `${now.getDate()} ${bulanNames[now.getMonth()]} ${now.getFullYear()}`;
+
+  const closedKemarin = snapshot?.total_closed ?? 0;
+
+  return template
+    .replace('{HARI}', hari)
+    .replace('{TANGGAL}', tanggal)
+    .replace('{TOTAL_TT}', totalTT.toString())
+    .replace('{OPEN_LT30}', openLt30.toString())
+    .replace('{OPEN_GT30}', openGt30.toString())
+    .replace('{OPEN_GT60}', openGt60.toString())
+    .replace('{NEW_OPEN}', newOpenToday.toString())
+    .replace('{CLOSED_KEMARIN}', closedKemarin.toString());
+}
+
 // ─── Command router ───────────────────────────────────────────────────────────
 
 const COMMAND_LIST = `📋 *NOC Bot — Command List*
@@ -521,6 +573,9 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 
 *📈 Summary*
 /summary — KPI ringkasan
+
+*📢 Rekap*
+/rekap-pagi — Rekap harian pagi (summary kemarin + hari ini)
 
 /help — Tampilkan daftar ini`;
 
@@ -607,6 +662,12 @@ async function processCommand(text: string, chatId: string) {
     case '/summary': {
       const summaryText = await generateSummaryText();
       await sendTelegramMessage(chatId, summaryText);
+      break;
+    }
+
+    case '/rekap-pagi': {
+      const text = await generateRekapPagi();
+      await sendTelegramMessage(chatId, text);
       break;
     }
 
