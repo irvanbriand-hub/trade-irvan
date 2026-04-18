@@ -516,14 +516,14 @@ async function generateRekapPagi(): Promise<string> {
 
   const { data: records } = await supabaseAdmin
     .from('tt_records')
-    .select('status, down_time');
+    .select('down_time');
 
-  const open = (records ?? []).filter((r: any) => r.status === 'OPEN');
-  const newOpenToday = open.filter((r: any) => r.down_time === 1).length;
-  const totalTT = records?.length ?? 0;
-  const openLt30 = open.filter((r: any) => r.down_time < 30).length;
-  const openGt30 = open.filter((r: any) => r.down_time >= 30 && r.down_time < 60).length;
-  const openGt60 = open.filter((r: any) => r.down_time >= 60).length;
+  const allRecords = records ?? [];
+  const totalTT = allRecords.length;
+  const newOpenToday = allRecords.filter((r: any) => r.down_time === 1).length;
+  const openLt30 = allRecords.filter((r: any) => r.down_time < 30).length;
+  const openGt30 = allRecords.filter((r: any) => r.down_time >= 30 && r.down_time < 60).length;
+  const openGt60 = allRecords.filter((r: any) => r.down_time >= 60).length;
 
   const { data: templateData } = await supabaseAdmin
     .from('bot_templates')
