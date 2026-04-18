@@ -305,12 +305,8 @@ async function generateOverdueText({
 } = {}): Promise<string> {
   let query = supabaseAdmin
     .from('tt_records')
-    .select('ticket_id, site_name, provinsi, kabupaten, down_time, status')
+    .select('ticket_id, site_id, site_name, provinsi, kabupaten, down_time, status')
     .order('down_time', { ascending: false });
-
-  if (!showClosed) {
-    query = query.eq('status', 'OPEN');
-  }
 
   if (minAging > 0) {
     query = query.gte('down_time', minAging);
@@ -334,13 +330,18 @@ async function generateOverdueText({
       : '✅ Tidak ada TT open saat ini.';
   }
 
-  const title = showClosed
-    ? `📋 *TT Progress — ${today}*`
-    : minAging > 0
-    ? `📋 *TT Overdue ≥${minAging} Hari — ${today}*`
-    : `📋 *TT Overdue — ${today}*`;
+  const bulanNames = [
+    'Januari','Februari','Maret','April','Mei','Juni',
+    'Juli','Agustus','September','Oktober','November','Desember'
+  ];
+  const now = new Date();
+  const tanggalLong = `${now.getDate()} ${bulanNames[now.getMonth()]} ${now.getFullYear()}`;
 
-  let text = `${title}\n\n`;
+  const header = minAging > 0
+    ? `Berikut Update/Prioritas, Aging > ${minAging} Hari, tanggal ${tanggalLong}:`
+    : `Berikut Update/Prioritas, tanggal ${tanggalLong}:`;
+
+  let text = `${header}\n\n`;
   let currentAging = -1;
   let counter = 1;
 
@@ -349,9 +350,9 @@ async function generateOverdueText({
       currentAging = record.down_time;
       text += `Aging ${currentAging} Hari\n${SEP}\n`;
     }
-    const emoji = record.status === 'CLOSED' ? '✅' : '❌';
+    const statusIcon = record.status === 'CLOSED' ? '✅' : '❌';
     const poName = findPOName(record.provinsi ?? '', record.kabupaten ?? '', poList);
-    text += `${counter}. ${record.ticket_id} - ${record.site_name} ${emoji}\n`;
+    text += `${counter}. ${record.site_id} - ${record.site_name} ${statusIcon}\n`;
     text += `> *PO*: ${poName} | ${record.provinsi ?? '-'}\n\n`;
     counter++;
   }
