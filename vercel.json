@@ -1,7 +1,16 @@
 {
+  "crons": [
+    {
+      "path": "/api/noc-snapshot",
+      "schedule": "0 16 * * *"
+    }
+  ],
   "functions": {
     "api/telegram-webhook.ts": {
       "maxDuration": 60
+    },
+    "api/noc-snapshot.ts": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
