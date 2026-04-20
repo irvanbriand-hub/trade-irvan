@@ -5,6 +5,25 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
+function getWIBDate(offsetDays = 0): string {
+  const now = new Date();
+  const wibTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  wibTime.setUTCDate(wibTime.getUTCDate() + offsetDays);
+  return wibTime.toISOString().split('T')[0];
+}
+
+function getWIBParts(offsetDays = 0): { day: number; date: number; month: number; year: number } {
+  const now = new Date();
+  const wibTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  wibTime.setUTCDate(wibTime.getUTCDate() + offsetDays);
+  return {
+    day: wibTime.getUTCDay(),
+    date: wibTime.getUTCDate(),
+    month: wibTime.getUTCMonth(),
+    year: wibTime.getUTCFullYear(),
+  };
+}
+
 export default async function handler(req: any, res: any) {
   // Security: hanya allow dari Vercel Cron
   // Vercel Cron kirim header Authorization: Bearer [CRON_SECRET]
@@ -26,7 +45,7 @@ export default async function handler(req: any, res: any) {
     const closed = records.filter((r) => r.status === 'CLOSED');
 
     const snapshot = {
-      snapshot_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+      snapshot_date: getWIBDate(0), // YYYY-MM-DD di zona WIB (UTC+7)
 
       total_tt: records.length,
       total_open: open.length,
@@ -68,8 +87,8 @@ export default async function handler(req: any, res: any) {
       'Januari','Februari','Maret','April','Mei','Juni',
       'Juli','Agustus','September','Oktober','November','Desember'
     ];
-    const now = new Date();
-    const tanggalFormatted = `${now.getDate()} ${bulanNames[now.getMonth()]} ${now.getFullYear()}`;
+    const wib = getWIBParts(0);
+    const tanggalFormatted = `${wib.date} ${bulanNames[wib.month]} ${wib.year}`;
 
     const message = `🔄 *Snapshot Harian — ${tanggalFormatted}*
 

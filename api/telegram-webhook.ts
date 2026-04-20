@@ -61,6 +61,36 @@ async function sendCaptureToTelegram(chatId: string, url: string) {
   }
 }
 
+// ─── WIB timezone helpers ─────────────────────────────────────────────────────
+
+function getWIBDate(offsetDays = 0): string {
+  const now = new Date();
+  const wibTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  wibTime.setUTCDate(wibTime.getUTCDate() + offsetDays);
+  return wibTime.toISOString().split('T')[0];
+}
+
+function getWIBParts(offsetDays = 0): { day: number; date: number; month: number; year: number } {
+  const now = new Date();
+  const wibTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  wibTime.setUTCDate(wibTime.getUTCDate() + offsetDays);
+  return {
+    day: wibTime.getUTCDay(),
+    date: wibTime.getUTCDate(),
+    month: wibTime.getUTCMonth(),
+    year: wibTime.getUTCFullYear(),
+  };
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function wibDMY(): string {
+  const { date, month, year } = getWIBParts(0);
+  return `${pad2(date)}/${pad2(month + 1)}/${year}`;
+}
+
 // ─── Sheet sync helpers ───────────────────────────────────────────────────────
 
 function normalizeDateFromSheet(str: string): string {
@@ -144,7 +174,7 @@ async function syncFromGoogleSheet(): Promise<void> {
     ]),
   );
 
-  const uploadDate = format(new Date(), 'dd/MM/yyyy');
+  const uploadDate = wibDMY();
   const toInsert: typeof records = [];
   const toUpdateFull: typeof records = [];
   const toUpdatePartial: Array<{ record: (typeof records)[0]; existing: ExistingEntry }> = [];
@@ -166,9 +196,24 @@ async function syncFromGoogleSheet(): Promise<void> {
     writeOps.push(
       supabaseAdmin.from('tt_records').insert(
         toInsert.map((r) => ({
-          ...r,
-          target_online_edited: r.target_online_original,
+          ticket_id: r.ticket_id,
+          site_id: r.site_id,
+          site_name: r.site_name,
+          provinsi: r.provinsi,
+          kabupaten: r.kabupaten,
+          date_start: r.date_start,
           upload_date: toISODate(uploadDate),
+
+          status: r.status,
+          down_time: r.down_time,
+          target_online_original: r.target_online_original,
+          actual_online: r.actual_online,
+          prob_class: r.prob_class,
+          detail_prob: r.detail_prob,
+          teknis_nt: r.teknis_nt,
+          tiket_internal: r.tiket_internal,
+
+          target_online_edited: r.target_online_original,
           is_manually_edited: false,
         })),
       ).then(({ error }) => { if (error) throw error; }),
@@ -179,9 +224,24 @@ async function syncFromGoogleSheet(): Promise<void> {
     writeOps.push(
       supabaseAdmin.from('tt_records').upsert(
         toUpdateFull.map((r) => ({
-          ...r,
-          target_online_edited: r.target_online_original,
+          ticket_id: r.ticket_id,
+          site_id: r.site_id,
+          site_name: r.site_name,
+          provinsi: r.provinsi,
+          kabupaten: r.kabupaten,
+          date_start: r.date_start,
           upload_date: toISODate(uploadDate),
+
+          status: r.status,
+          down_time: r.down_time,
+          target_online_original: r.target_online_original,
+          actual_online: r.actual_online,
+          prob_class: r.prob_class,
+          detail_prob: r.detail_prob,
+          teknis_nt: r.teknis_nt,
+          tiket_internal: r.tiket_internal,
+
+          target_online_edited: r.target_online_original,
           is_manually_edited: false,
         })),
         { onConflict: 'ticket_id' },
@@ -193,11 +253,28 @@ async function syncFromGoogleSheet(): Promise<void> {
     writeOps.push(
       supabaseAdmin.from('tt_records').upsert(
         toUpdatePartial.map(({ record: r, existing: ex }) => ({
-          ...r,
-          target_online_edited: ex.target_online_edited,  // PROTECTED
+          ticket_id: r.ticket_id,
+          site_id: r.site_id,
+          site_name: r.site_name,
+          provinsi: r.provinsi,
+          kabupaten: r.kabupaten,
+          date_start: r.date_start,
           upload_date: toISODate(uploadDate),
-          is_manually_edited: true,                       // PROTECTED
-          reschedule_note: ex.reschedule_note,            // PROTECTED
+
+          // 8 field NON-PROTECTED — selalu update dari Google Sheet
+          status: r.status,
+          down_time: r.down_time,
+          target_online_original: r.target_online_original,
+          actual_online: r.actual_online,
+          prob_class: r.prob_class,
+          detail_prob: r.detail_prob,
+          teknis_nt: r.teknis_nt,
+          tiket_internal: r.tiket_internal,
+
+          // 3 field PROTECTED — preserve dari existing
+          target_online_edited: ex.target_online_edited,
+          is_manually_edited: true,
+          reschedule_note: ex.reschedule_note,
         })),
         { onConflict: 'ticket_id' },
       ).then(({ error }) => { if (error) throw error; }),
@@ -239,8 +316,8 @@ async function generateSummaryText(): Promise<string> {
 
   if (error || !records) return '❌ Gagal mengambil data summary.';
 
-  const today = format(new Date(), 'dd/MM/yyyy');
-  const todayKey = format(new Date(), 'dd/MM/yyyy');
+  const today = wibDMY();
+  const todayKey = today;
 
   const total       = records.length;
   const open        = records.filter((r: any) => r.status === 'OPEN').length;
@@ -321,7 +398,6 @@ async function generateOverdueText({
 
   const records = recordsRes.data;
   const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
-  const today = format(new Date(), 'dd/MM/yyyy');
   const SEP = '=========================';
 
   if (!records.length) {
@@ -334,8 +410,8 @@ async function generateOverdueText({
     'Januari','Februari','Maret','April','Mei','Juni',
     'Juli','Agustus','September','Oktober','November','Desember'
   ];
-  const now = new Date();
-  const tanggalLong = `${now.getDate()} ${bulanNames[now.getMonth()]} ${now.getFullYear()}`;
+  const wib = getWIBParts(0);
+  const tanggalLong = `${wib.date} ${bulanNames[wib.month]} ${wib.year}`;
 
   const header = minAging > 0
     ? `Berikut Update/Prioritas, Aging > ${minAging} Hari, tanggal ${tanggalLong}:`
@@ -380,7 +456,7 @@ async function generateOverdueSummary(): Promise<string> {
 
   const records = recordsRes.data;
   const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
-  const today = format(new Date(), 'dd/MM/yyyy');
+  const today = wibDMY();
 
   const poCount: Record<string, number> = {};
   for (const r of records) {
@@ -432,7 +508,7 @@ async function generateOverduePrediksi(): Promise<string> {
 
   const records = recordsRes.data ?? [];
   const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
-  const today = format(new Date(), 'dd/MM/yyyy');
+  const today = wibDMY();
 
   if (!records.length) {
     return `✅ Tidak ada TT yang mendekati overdue (aging 6-7 hari) — ${today}`;
@@ -480,12 +556,14 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
   const allRecords = recordsRes.data ?? [];
   const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
 
-  const fromStart = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
-  const toEnd = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59);
+  const fromStart = Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), fromDate.getUTCDate());
+  const toEnd = Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth(), toDate.getUTCDate(), 23, 59, 59);
 
   const inRange = allRecords.filter((r: any) => {
     const d = parseDMY(r.target_online_original ?? '');
-    return d && d >= fromStart && d <= toEnd;
+    if (!d) return false;
+    const t = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    return t >= fromStart && t <= toEnd;
   });
 
   const poNames = new Set<string>();
@@ -494,10 +572,16 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
     if (name !== '-') poNames.add(name);
   }
 
-  const isSingleDay = fromStart.getTime() === new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate()).getTime();
+  const fmtDMY2 = (d: Date) =>
+    `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear()).slice(2)}`;
+
+  const isSingleDay =
+    fromDate.getUTCFullYear() === toDate.getUTCFullYear() &&
+    fromDate.getUTCMonth() === toDate.getUTCMonth() &&
+    fromDate.getUTCDate() === toDate.getUTCDate();
   const dateLabel = isSingleDay
-    ? format(fromDate, 'dd/MM/yy')
-    : `${format(fromDate, 'dd/MM/yy')} - ${format(toDate, 'dd/MM/yy')}`;
+    ? fmtDMY2(fromDate)
+    : `${fmtDMY2(fromDate)} - ${fmtDMY2(toDate)}`;
 
   const poListStr = [...poNames].sort().join(', ') || '-';
 
@@ -505,9 +589,7 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
 }
 
 async function generateRekapPagi(): Promise<string> {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = format(yesterday, 'yyyy-MM-dd');
+  const yesterdayStr = getWIBDate(-1);
 
   const { data: snapshot } = await supabaseAdmin
     .from('daily_snapshots')
@@ -534,14 +616,14 @@ async function generateRekapPagi(): Promise<string> {
 
   const template = templateData?.template_text || '';
 
-  const now = new Date();
+  const wib = getWIBParts(0);
   const hariNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   const bulanNames = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
   ];
-  const hari = hariNames[now.getDay()];
-  const tanggal = `${now.getDate()} ${bulanNames[now.getMonth()]} ${now.getFullYear()}`;
+  const hari = hariNames[wib.day];
+  const tanggal = `${wib.date} ${bulanNames[wib.month]} ${wib.year}`;
 
   const closedKemarin = snapshot?.total_closed ?? 0;
 
@@ -597,10 +679,12 @@ async function processCommand(text: string, chatId: string) {
       }
       await sendTelegramMessage(chatId, '📡 Data diupdate. Generating capture...');
 
-      const today = new Date();
-      const toDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days);
-      const from = format(today, 'yyyy-MM-dd');
-      const to = format(toDate, 'yyyy-MM-dd');
+      const wibToday = getWIBParts(0);
+      const wibTo = getWIBParts(days);
+      const today = new Date(Date.UTC(wibToday.year, wibToday.month, wibToday.date));
+      const toDate = new Date(Date.UTC(wibTo.year, wibTo.month, wibTo.date));
+      const from = getWIBDate(0);
+      const to = getWIBDate(days);
       const captureUrl = `${APP_URL}/noc/capture?type=multiday&from=${from}&to=${to}`;
 
       await sendCaptureToTelegram(chatId, captureUrl);
