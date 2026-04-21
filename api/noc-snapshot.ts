@@ -24,6 +24,100 @@ function getWIBParts(offsetDays = 0): { day: number; date: number; month: number
   };
 }
 
+// ─── S-Curve actual-online detection (duplikasi dari scurveQueries.ts) ────────
+
+function parseTargetToISODate(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s || s === '-') return null;
+
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  }
+
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (dmy) {
+    const d = dmy[1].padStart(2, '0');
+    const m = dmy[2].padStart(2, '0');
+    const y = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  return null;
+}
+
+async function updateBaselineActualsServer(): Promise<number> {
+  const { data: baseline } = await supabaseAdmin
+    .from('s_curve_baselines')
+    .select('id')
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!baseline) return 0;
+
+  const { data: targets } = await supabaseAdmin
+    .from('s_curve_targets')
+    .select('id, ticket_id')
+    .eq('baseline_id', (baseline as { id: string }).id)
+    .eq('is_online', false);
+
+  if (!targets || targets.length === 0) return 0;
+
+  const { data: currentRecords } = await supabaseAdmin
+    .from('tt_records')
+    .select('ticket_id, status, actual_online');
+
+  const recordMap = new Map<string, { status: string; actual_online: string | null }>();
+  for (const r of (currentRecords as Array<{ ticket_id: string; status: string; actual_online: string | null }>) ?? []) {
+    recordMap.set(r.ticket_id, { status: r.status, actual_online: r.actual_online });
+  }
+
+  const now = new Date().toISOString();
+  const todayWIB = getWIBDate();
+  const updates: Array<{ id: string; actual_online: string }> = [];
+
+  for (const target of targets as Array<{ id: string; ticket_id: string }>) {
+    const record = recordMap.get(target.ticket_id);
+    let actualOnline: string | null = null;
+
+    if (!record) {
+      actualOnline = todayWIB;
+    } else if (
+      record.status === 'CLOSED' &&
+      record.actual_online &&
+      record.actual_online.trim() !== '' &&
+      record.actual_online.trim() !== '-'
+    ) {
+      actualOnline = parseTargetToISODate(record.actual_online) ?? todayWIB;
+    }
+
+    if (actualOnline) {
+      updates.push({ id: target.id, actual_online: actualOnline });
+    }
+  }
+
+  if (updates.length === 0) return 0;
+
+  await Promise.all(
+    updates.map((u) =>
+      supabaseAdmin
+        .from('s_curve_targets')
+        .update({
+          is_online: true,
+          actual_online: u.actual_online,
+          online_detected_at: now,
+        })
+        .eq('id', u.id)
+        .then(({ error }) => {
+          if (error) throw error;
+        }),
+    ),
+  );
+
+  return updates.length;
+}
+
 export default async function handler(req: any, res: any) {
   // Security: hanya allow dari Vercel Cron
   // Vercel Cron kirim header Authorization: Bearer [CRON_SECRET]
@@ -81,6 +175,14 @@ export default async function handler(req: any, res: any) {
       .upsert(snapshot, { onConflict: 'snapshot_date' });
 
     if (error) throw error;
+
+    // Update S-Curve baseline actuals (best-effort)
+    try {
+      const n = await updateBaselineActualsServer();
+      if (n > 0) console.log(`[noc-snapshot] S-Curve: ${n} target mark online`);
+    } catch (err) {
+      console.error('[noc-snapshot] updateBaselineActualsServer error:', err);
+    }
 
     // Format tanggal Indonesia
     const bulanNames = [

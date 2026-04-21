@@ -819,6 +819,30 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_templates: {
+        Row: {
+          description: string | null
+          id: string
+          template_key: string
+          template_text: string
+          updated_at: string | null
+        }
+        Insert: {
+          description?: string | null
+          id?: string
+          template_key: string
+          template_text: string
+          updated_at?: string | null
+        }
+        Update: {
+          description?: string | null
+          id?: string
+          template_key?: string
+          template_text?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       broker_profiles: {
         Row: {
           broker_code: string
@@ -876,6 +900,60 @@ export type Database = {
           last_used?: string | null
           nama?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      daily_snapshots: {
+        Row: {
+          close_noc: number | null
+          close_om: number | null
+          close_visit: number | null
+          created_at: string | null
+          id: string
+          new_open_today: number | null
+          open_gt30: number | null
+          open_gt60: number | null
+          open_lt30: number | null
+          overdue_gte30: number | null
+          overdue_gte8: number | null
+          snapshot_date: string
+          total_closed: number | null
+          total_open: number | null
+          total_tt: number | null
+        }
+        Insert: {
+          close_noc?: number | null
+          close_om?: number | null
+          close_visit?: number | null
+          created_at?: string | null
+          id?: string
+          new_open_today?: number | null
+          open_gt30?: number | null
+          open_gt60?: number | null
+          open_lt30?: number | null
+          overdue_gte30?: number | null
+          overdue_gte8?: number | null
+          snapshot_date: string
+          total_closed?: number | null
+          total_open?: number | null
+          total_tt?: number | null
+        }
+        Update: {
+          close_noc?: number | null
+          close_om?: number | null
+          close_visit?: number | null
+          created_at?: string | null
+          id?: string
+          new_open_today?: number | null
+          open_gt30?: number | null
+          open_gt60?: number | null
+          open_lt30?: number | null
+          overdue_gte30?: number | null
+          overdue_gte8?: number | null
+          snapshot_date?: string
+          total_closed?: number | null
+          total_open?: number | null
+          total_tt?: number | null
         }
         Relationships: []
       }
@@ -941,6 +1019,125 @@ export type Database = {
           notes?: string | null
           provinsi_coverage?: string[] | null
           status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      s_curve_baselines: {
+        Row: {
+          baseline_date: string
+          completed_at: string | null
+          created_at: string | null
+          end_date: string
+          id: string
+          label: string
+          status: string | null
+          total_target: number | null
+        }
+        Insert: {
+          baseline_date: string
+          completed_at?: string | null
+          created_at?: string | null
+          end_date: string
+          id?: string
+          label: string
+          status?: string | null
+          total_target?: number | null
+        }
+        Update: {
+          baseline_date?: string
+          completed_at?: string | null
+          created_at?: string | null
+          end_date?: string
+          id?: string
+          label?: string
+          status?: string | null
+          total_target?: number | null
+        }
+        Relationships: []
+      }
+      s_curve_targets: {
+        Row: {
+          actual_online: string | null
+          area: number | null
+          baseline_id: string
+          created_at: string | null
+          id: string
+          is_online: boolean | null
+          kabupaten: string | null
+          online_detected_at: string | null
+          po_name: string | null
+          provinsi: string | null
+          site_id: string
+          site_name: string | null
+          target_online: string | null
+          ticket_id: string
+        }
+        Insert: {
+          actual_online?: string | null
+          area?: number | null
+          baseline_id: string
+          created_at?: string | null
+          id?: string
+          is_online?: boolean | null
+          kabupaten?: string | null
+          online_detected_at?: string | null
+          po_name?: string | null
+          provinsi?: string | null
+          site_id: string
+          site_name?: string | null
+          target_online?: string | null
+          ticket_id: string
+        }
+        Update: {
+          actual_online?: string | null
+          area?: number | null
+          baseline_id?: string
+          created_at?: string | null
+          id?: string
+          is_online?: boolean | null
+          kabupaten?: string | null
+          online_detected_at?: string | null
+          po_name?: string | null
+          provinsi?: string | null
+          site_id?: string
+          site_name?: string | null
+          target_online?: string | null
+          ticket_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "s_curve_targets_baseline_id_fkey"
+            columns: ["baseline_id"]
+            isOneToOne: false
+            referencedRelation: "s_curve_baselines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_notes: {
+        Row: {
+          created_at: string | null
+          id: string
+          note: string
+          site_id: string
+          site_name: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          note: string
+          site_id: string
+          site_name?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          note?: string
+          site_id?: string
+          site_name?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -1229,6 +1426,81 @@ export type Database = {
           id?: string
           name?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      tt_records: {
+        Row: {
+          actual_online: string | null
+          created_at: string | null
+          date_start: string | null
+          detail_prob: string | null
+          down_time: number | null
+          id: string
+          is_manually_edited: boolean | null
+          kabupaten: string | null
+          last_updated: string | null
+          note_original: string | null
+          prob_class: string | null
+          provinsi: string | null
+          reschedule_note: string | null
+          site_id: string | null
+          site_name: string
+          status: string | null
+          target_online_edited: string | null
+          target_online_original: string | null
+          teknis_nt: string | null
+          ticket_id: string
+          tiket_internal: string | null
+          upload_date: string | null
+        }
+        Insert: {
+          actual_online?: string | null
+          created_at?: string | null
+          date_start?: string | null
+          detail_prob?: string | null
+          down_time?: number | null
+          id?: string
+          is_manually_edited?: boolean | null
+          kabupaten?: string | null
+          last_updated?: string | null
+          note_original?: string | null
+          prob_class?: string | null
+          provinsi?: string | null
+          reschedule_note?: string | null
+          site_id?: string | null
+          site_name: string
+          status?: string | null
+          target_online_edited?: string | null
+          target_online_original?: string | null
+          teknis_nt?: string | null
+          ticket_id: string
+          tiket_internal?: string | null
+          upload_date?: string | null
+        }
+        Update: {
+          actual_online?: string | null
+          created_at?: string | null
+          date_start?: string | null
+          detail_prob?: string | null
+          down_time?: number | null
+          id?: string
+          is_manually_edited?: boolean | null
+          kabupaten?: string | null
+          last_updated?: string | null
+          note_original?: string | null
+          prob_class?: string | null
+          provinsi?: string | null
+          reschedule_note?: string | null
+          site_id?: string | null
+          site_name?: string
+          status?: string | null
+          target_online_edited?: string | null
+          target_online_original?: string | null
+          teknis_nt?: string | null
+          ticket_id?: string
+          tiket_internal?: string | null
+          upload_date?: string | null
         }
         Relationships: []
       }

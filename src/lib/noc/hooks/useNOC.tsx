@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { parseTSV } from '../tsvParser';
 import { computeSummary } from '../classifiers';
 import { saveUploadHistory, mergeTSVToSupabase, resetTTRecords, getSiteNotes } from '../queries';
+import { updateBaselineActuals } from '../scurveQueries';
 import type { TTRecord, PO, NOCSummary, MergeResult, SiteNote } from '../types';
 
 interface NOCContextValue {
@@ -74,6 +75,13 @@ export function NOCProvider({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ['noc', 'tt_records'] });
 
       saveUploadHistory(date, computed).catch(() => {});
+
+      // Update S-Curve baseline actuals (best-effort — skip kalau belum ada baseline aktif)
+      updateBaselineActuals()
+        .then((n) => {
+          if (n > 0) qc.invalidateQueries({ queryKey: ['noc', 's_curve_targets'] });
+        })
+        .catch((err) => console.error('[updateBaselineActuals]', err));
     } finally {
       setIsLoading(false);
     }

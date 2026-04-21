@@ -23,10 +23,13 @@ import NocGenerate from './NocGenerate';
 import NocPO from './NocPO';
 import NocSettings from './NocSettings';
 import NOCCapturePage from './NOCCapturePage';
+import NOCSCurve from './NOCSCurve';
+import NOCSCurveCapture from './NOCSCurveCapture';
 
 const tabs = [
   { to: 'dashboard', label: 'Dashboard', icon: '📊' },
   { to: 'recap', label: 'Rekap', icon: '📋' },
+  { to: 'scurve', label: 'S-Curve', icon: '📈' },
   { to: 'generate', label: 'Generate', icon: '💬' },
   { to: 'po', label: 'PO', icon: '👤' },
   { to: 'settings', label: 'Settings', icon: '⚙️' },
@@ -147,6 +150,7 @@ function NocInner() {
           <Route path="/" element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<NocDashboard />} />
           <Route path="recap" element={<NocRecap />} />
+          <Route path="scurve" element={<NOCSCurve />} />
           <Route path="generate" element={<NocGenerate />} />
           <Route path="po" element={<NocPO />} />
           <Route path="settings" element={<NocSettings />} />
@@ -161,6 +165,7 @@ export default function NocLayout() {
     <NOCProvider>
       <Routes>
         <Route path="capture" element={<NOCCapturePage />} />
+        <Route path="scurve-capture" element={<NOCSCurveCapture />} />
         <Route path="*" element={<NocInner />} />
       </Routes>
     </NOCProvider>

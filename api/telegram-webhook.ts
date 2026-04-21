@@ -20,16 +20,22 @@ async function sendTelegramMessage(chatId: string, text: string) {
   });
 }
 
-async function sendTelegramPhoto(chatId: string, photo: Buffer) {
+async function sendTelegramPhoto(chatId: string, photo: Buffer, filename: string = 'recap.png') {
   const formData = new FormData();
   formData.append('chat_id', chatId);
-  formData.append('photo', new Blob([photo], { type: 'image/png' }), 'recap.png');
+  formData.append('photo', new Blob([photo], { type: 'image/png' }), filename);
   await fetch(`${TELEGRAM_API}/sendPhoto`, { method: 'POST', body: formData });
 }
 
 // ─── Screenshot helper ────────────────────────────────────────────────────────
 
-async function sendCaptureToTelegram(chatId: string, url: string) {
+async function sendCaptureToTelegram(
+  chatId: string,
+  url: string,
+  opts: { filename?: string; waitSelector?: string } = {},
+) {
+  const filename = opts.filename ?? 'recap.png';
+  const waitSelector = opts.waitSelector ?? '#capture-ready';
   let browser = null;
   try {
     const chromium = (await import('@sparticuz/chromium')).default;
@@ -45,14 +51,14 @@ async function sendCaptureToTelegram(chatId: string, url: string) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1400, height: 900 });
     await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.waitForSelector('#capture-ready', { timeout: 20000 });
+    await page.waitForSelector(waitSelector, { timeout: 20000 });
     await new Promise((r) => setTimeout(r, 1000));
 
-    const element = await page.$('#capture-ready');
-    if (!element) throw new Error('#capture-ready element not found');
+    const element = await page.$(waitSelector);
+    if (!element) throw new Error(`${waitSelector} element not found`);
 
     const screenshot = await element.screenshot({ type: 'png' });
-    await sendTelegramPhoto(chatId, Buffer.from(screenshot));
+    await sendTelegramPhoto(chatId, Buffer.from(screenshot), filename);
   } catch (err: any) {
     console.error('[sendCaptureToTelegram] error:', err);
     await sendTelegramMessage(chatId, `❌ Gagal generate capture: ${err.message}`);
@@ -141,6 +147,114 @@ type ExistingEntry = {
   target_online_edited: string | null;
   reschedule_note: string | null;
 };
+
+// ─── S-Curve actual-online detection ─────────────────────────────────────────
+
+/** Parse "DD/M/YY", "DD/MM/YYYY", atau "YYYY-MM-DD" ke ISO "YYYY-MM-DD". */
+function parseTargetToISODate(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  if (!s || s === '-') return null;
+
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  }
+
+  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (dmy) {
+    const d = dmy[1].padStart(2, '0');
+    const m = dmy[2].padStart(2, '0');
+    const y = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+    return `${y}-${m}-${d}`;
+  }
+
+  return null;
+}
+
+/**
+ * Scan tt_records terkini, update target di baseline S-Curve aktif yang sudah online.
+ * Dipanggil setelah sync dari Google Sheet / snapshot harian.
+ *
+ * Duplikasi logic dari src/lib/noc/scurveQueries.ts (tidak bisa di-share karena
+ * frontend pakai supabase client browser, server-side pakai supabaseAdmin).
+ */
+async function updateBaselineActualsServer(): Promise<number> {
+  // 1. Baseline aktif
+  const { data: baseline } = await supabaseAdmin
+    .from('s_curve_baselines')
+    .select('id')
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (!baseline) return 0;
+
+  // 2. Target yang belum online
+  const { data: targets } = await supabaseAdmin
+    .from('s_curve_targets')
+    .select('id, ticket_id')
+    .eq('baseline_id', (baseline as { id: string }).id)
+    .eq('is_online', false);
+
+  if (!targets || targets.length === 0) return 0;
+
+  // 3. tt_records terkini (minimal field)
+  const { data: currentRecords } = await supabaseAdmin
+    .from('tt_records')
+    .select('ticket_id, status, actual_online');
+
+  const recordMap = new Map<string, { status: string; actual_online: string | null }>();
+  for (const r of (currentRecords as Array<{ ticket_id: string; status: string; actual_online: string | null }>) ?? []) {
+    recordMap.set(r.ticket_id, { status: r.status, actual_online: r.actual_online });
+  }
+
+  // 4. Tentukan target yang baru online
+  const now = new Date().toISOString();
+  const todayWIB = getWIBDate();
+  const updates: Array<{ id: string; actual_online: string }> = [];
+
+  for (const target of targets as Array<{ id: string; ticket_id: string }>) {
+    const record = recordMap.get(target.ticket_id);
+    let actualOnline: string | null = null;
+
+    if (!record) {
+      // Opsi B: ticket hilang dari sheet
+      actualOnline = todayWIB;
+    } else if (
+      record.status === 'CLOSED' &&
+      record.actual_online &&
+      record.actual_online.trim() !== '' &&
+      record.actual_online.trim() !== '-'
+    ) {
+      // Opsi A: actual_online terisi di sheet
+      actualOnline = parseTargetToISODate(record.actual_online) ?? todayWIB;
+    }
+
+    if (actualOnline) {
+      updates.push({ id: target.id, actual_online: actualOnline });
+    }
+  }
+
+  if (updates.length === 0) return 0;
+
+  await Promise.all(
+    updates.map((u) =>
+      supabaseAdmin
+        .from('s_curve_targets')
+        .update({
+          is_online: true,
+          actual_online: u.actual_online,
+          online_detected_at: now,
+        })
+        .eq('id', u.id)
+        .then(({ error }) => {
+          if (error) throw error;
+        }),
+    ),
+  );
+
+  return updates.length;
+}
 
 async function syncFromGoogleSheet(): Promise<{ inserted: number; updated: number; deleted: number }> {
   if (!NOC_SHEETS_URL) throw new Error('VITE_NOC_SHEETS_URL tidak dikonfigurasi');
@@ -301,6 +415,14 @@ async function syncFromGoogleSheet(): Promise<{ inserted: number; updated: numbe
   }
 
   await Promise.all(writeOps);
+
+  // Update S-Curve baseline actuals (best-effort — tidak blokir sync kalau error)
+  try {
+    const n = await updateBaselineActualsServer();
+    if (n > 0) console.log(`[syncFromGoogleSheet] S-Curve: ${n} target mark online`);
+  } catch (err) {
+    console.error('[syncFromGoogleSheet] updateBaselineActualsServer error:', err);
+  }
 
   return {
     inserted: toInsert.length,
@@ -617,6 +739,99 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
   return `Dear all, berikut update progress penyelesaian tiket target online hari ini (${dateLabel}) dengan target online yang sudah disesuaikan dengan WM terakhir.\nTerimakasih 🙏\n\nPO: ${poListStr}`;
 }
 
+async function generateSCurveSummary(
+  area: number | null,
+  baselineType: 'active' | 'last' = 'active',
+): Promise<string> {
+  let baselineData: { id: string; label: string; baseline_date: string } | null = null;
+
+  if (baselineType === 'active') {
+    const { data } = await supabaseAdmin
+      .from('s_curve_baselines')
+      .select('id, label, baseline_date')
+      .eq('status', 'active')
+      .maybeSingle();
+    baselineData = data as typeof baselineData;
+  } else {
+    const { data } = await supabaseAdmin
+      .from('s_curve_baselines')
+      .select('id, label, baseline_date')
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    baselineData = data as typeof baselineData;
+  }
+
+  if (!baselineData) {
+    return `❌ Tidak ada baseline ${baselineType === 'active' ? 'aktif' : 'terakhir'}.`;
+  }
+
+  const baseline = baselineData;
+
+  let targetQuery = supabaseAdmin
+    .from('s_curve_targets')
+    .select('is_online, target_online, area')
+    .eq('baseline_id', baseline.id);
+
+  if (area !== null) {
+    targetQuery = targetQuery.eq('area', area);
+  }
+
+  const { data: targetsData } = await targetQuery;
+  const targets = (targetsData ?? []) as Array<{
+    is_online: boolean;
+    target_online: string | null;
+    area: number | null;
+  }>;
+
+  const totalTarget = targets.length;
+  const onlineCount = targets.filter((t) => t.is_online).length;
+  const percent = totalTarget > 0 ? Math.round((onlineCount / totalTarget) * 100) : 0;
+
+  // Hari ke-berapa (WIB)
+  const todayISO = getWIBDate(0);
+  const parseIsoToUtcMs = (iso: string) =>
+    Date.UTC(
+      parseInt(iso.slice(0, 4), 10),
+      parseInt(iso.slice(5, 7), 10) - 1,
+      parseInt(iso.slice(8, 10), 10),
+    );
+  const dayNumber =
+    Math.floor(
+      (parseIsoToUtcMs(todayISO) - parseIsoToUtcMs(baseline.baseline_date)) /
+        (1000 * 60 * 60 * 24),
+    ) + 1;
+
+  // Planned sampai hari ini — string compare aman karena format ISO sama
+  const plannedToday = targets.filter(
+    (t) => t.target_online && t.target_online <= todayISO,
+  ).length;
+
+  const gap = onlineCount - plannedToday;
+  const gapLabel =
+    gap >= 0
+      ? `+${gap} TT (ahead schedule! 🚀)`
+      : `${gap} TT (behind schedule ⚠️)`;
+
+  const areaLabel = area === null ? 'Global' : `Area ${area}`;
+
+  const bulanNames = [
+    'Januari','Februari','Maret','April','Mei','Juni',
+    'Juli','Agustus','September','Oktober','November','Desember'
+  ];
+  const wib = getWIBParts(0);
+  const tanggalLong = `${wib.date} ${bulanNames[wib.month]} ${wib.year}`;
+
+  return `📊 *S-Curve ${areaLabel} — ${baseline.label}*
+Hari ke-${dayNumber} dari 7 (${tanggalLong})
+
+🎯 Target: ${totalTarget} TT
+✅ Actual Online: ${onlineCount} TT (${percent}%)
+📌 Planned hari ini: ${plannedToday} TT
+📈 Gap: ${gapLabel}`;
+}
+
 async function generateRekapPagi(): Promise<string> {
   const yesterdayStr = getWIBDate(-1);
 
@@ -688,6 +903,11 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 
 *📢 Rekap*
 /rekap-pagi — Rekap harian pagi (summary kemarin + hari ini)
+
+*📈 S-Curve*
+/scurve — Report lengkap (global + 3 area)
+/scurve 1/2/3 — Per area tertentu
+/scurve last — Final report baseline terakhir (Selasa malam)
 
 /help — Tampilkan daftar ini`;
 
@@ -782,6 +1002,54 @@ async function processCommand(text: string, chatId: string) {
     case '/rekap-pagi': {
       const text = await generateRekapPagi();
       await sendTelegramMessage(chatId, text);
+      break;
+    }
+
+    case '/scurve': {
+      const AREAS: Array<{ key: string; area: number | null }> = [
+        { key: 'global', area: null },
+        { key: '1', area: 1 },
+        { key: '2', area: 2 },
+        { key: '3', area: 3 },
+      ];
+
+      if (arg === '1' || arg === '2' || arg === '3') {
+        await sendTelegramMessage(chatId, `⏳ Generating S-Curve Area ${arg}...`);
+        const captureUrl = `${APP_URL}/noc/scurve-capture?area=${arg}&baseline=active`;
+        await sendCaptureToTelegram(chatId, captureUrl, {
+          filename: `scurve-area-${arg}.png`,
+          waitSelector: '#scurve-capture-ready',
+        });
+        const summary = await generateSCurveSummary(parseInt(arg, 10));
+        await sendTelegramMessage(chatId, summary);
+      } else if (arg === 'last') {
+        await sendTelegramMessage(chatId, '⏳ Generating S-Curve final report (4 charts)...');
+        for (const a of AREAS) {
+          const captureUrl = `${APP_URL}/noc/scurve-capture?area=${a.key}&baseline=last`;
+          await sendCaptureToTelegram(chatId, captureUrl, {
+            filename: `scurve-${a.key}-final.png`,
+            waitSelector: '#scurve-capture-ready',
+          });
+          const summary = await generateSCurveSummary(a.area, 'last');
+          await sendTelegramMessage(chatId, summary);
+        }
+      } else if (arg === '') {
+        await sendTelegramMessage(chatId, '⏳ Generating S-Curve report (4 charts)...');
+        for (const a of AREAS) {
+          const captureUrl = `${APP_URL}/noc/scurve-capture?area=${a.key}&baseline=active`;
+          await sendCaptureToTelegram(chatId, captureUrl, {
+            filename: `scurve-${a.key}.png`,
+            waitSelector: '#scurve-capture-ready',
+          });
+          const summary = await generateSCurveSummary(a.area);
+          await sendTelegramMessage(chatId, summary);
+        }
+      } else {
+        await sendTelegramMessage(
+          chatId,
+          '⚠️ Argumen tidak valid. Gunakan /scurve, /scurve 1/2/3, atau /scurve last',
+        );
+      }
       break;
     }
 
