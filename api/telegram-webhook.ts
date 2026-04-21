@@ -142,37 +142,56 @@ type ExistingEntry = {
   reschedule_note: string | null;
 };
 
-async function syncFromGoogleSheet(): Promise<void> {
+async function syncFromGoogleSheet(): Promise<{ inserted: number; updated: number; deleted: number }> {
   if (!NOC_SHEETS_URL) throw new Error('VITE_NOC_SHEETS_URL tidak dikonfigurasi');
 
   const resp = await fetch(NOC_SHEETS_URL);
   if (!resp.ok) throw new Error(`Gagal fetch sheet: ${resp.status}`);
 
   const rows: SheetRow[] = await resp.json();
-  if (!rows.length) return;
+  if (!rows.length) return { inserted: 0, updated: 0, deleted: 0 };
 
   const records = rows.map(mapSheetRowToRecord).filter((r) => r.ticket_id);
-  if (!records.length) return;
+  if (!records.length) return { inserted: 0, updated: 0, deleted: 0 };
 
-  const ticketIds = records.map((r) => r.ticket_id);
+  const incomingTicketIds = new Set(records.map((r) => r.ticket_id));
 
+  // Fetch SEMUA ticket di DB — perlu untuk tahu mana yang harus di-delete
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from('tt_records')
-    .select('ticket_id, is_manually_edited, target_online_edited, reschedule_note')
-    .in('ticket_id', ticketIds);
+    .select('ticket_id, is_manually_edited, target_online_edited, reschedule_note');
 
   if (fetchError) throw fetchError;
 
-  const existingMap = new Map<string, ExistingEntry>(
-    (existing ?? []).map((e: any) => [
-      e.ticket_id as string,
-      {
+  const existingMap = new Map<string, ExistingEntry>();
+  const ticketIdsToDelete: string[] = [];
+
+  for (const e of (existing ?? []) as any[]) {
+    const tid = e.ticket_id as string;
+    if (incomingTicketIds.has(tid)) {
+      existingMap.set(tid, {
         is_manually_edited: e.is_manually_edited as boolean,
         target_online_edited: e.target_online_edited as string | null,
         reschedule_note: e.reschedule_note as string | null,
-      },
-    ]),
-  );
+      });
+    } else {
+      ticketIdsToDelete.push(tid);
+    }
+  }
+
+  // DELETE ticket yang ada di DB tapi sudah tidak ada di Google Sheet
+  let deleted = 0;
+  if (ticketIdsToDelete.length > 0) {
+    const { error: deleteError } = await supabaseAdmin
+      .from('tt_records')
+      .delete()
+      .in('ticket_id', ticketIdsToDelete);
+    if (deleteError) {
+      console.error('[syncFromGoogleSheet] Delete error:', deleteError);
+    } else {
+      deleted = ticketIdsToDelete.length;
+    }
+  }
 
   const uploadDate = wibDMY();
   const toInsert: typeof records = [];
@@ -282,17 +301,27 @@ async function syncFromGoogleSheet(): Promise<void> {
   }
 
   await Promise.all(writeOps);
+
+  return {
+    inserted: toInsert.length,
+    updated: toUpdateFull.length + toUpdatePartial.length,
+    deleted,
+  };
 }
 
 async function syncAndCapture(chatId: string, url: string): Promise<void> {
   await sendTelegramMessage(chatId, '⏳ Syncing data dari Google Sheet...');
+  let counts: { inserted: number; updated: number; deleted: number } | null = null;
   try {
-    await syncFromGoogleSheet();
+    counts = await syncFromGoogleSheet();
   } catch (err: any) {
     console.error('[syncAndCapture] sync error:', err);
     await sendTelegramMessage(chatId, `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`);
   }
-  await sendTelegramMessage(chatId, '📡 Data diupdate. Generating capture...');
+  const statusLine = counts
+    ? `📡 Data diupdate:\n+${counts.inserted} insert, ${counts.updated} update, -${counts.deleted} delete\n\nGenerating capture...`
+    : '📡 Data diupdate. Generating capture...';
+  await sendTelegramMessage(chatId, statusLine);
   await sendCaptureToTelegram(chatId, url);
 }
 

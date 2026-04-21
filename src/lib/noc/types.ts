@@ -114,5 +114,6 @@ export interface MergeResult {
   updatedProtected: number;
   statusChanged: number;
   unchanged: number;
+  deleted: number;
   totalInDB: number;
 }

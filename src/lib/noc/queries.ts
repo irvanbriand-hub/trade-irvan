@@ -63,29 +63,58 @@ export async function mergeTSVToSupabase(
   records: TTRecord[],
   uploadDate: string,
 ): Promise<MergeResult> {
-  if (records.length === 0) return { inserted: 0, updated: 0, unchanged: 0, totalInDB: 0 };
+  if (records.length === 0) {
+    return {
+      inserted: 0,
+      updated: 0,
+      updatedFull: 0,
+      updatedProtected: 0,
+      statusChanged: 0,
+      unchanged: 0,
+      deleted: 0,
+      totalInDB: 0,
+    };
+  }
 
-  const ticketIds = records.map((r) => r.ticketId);
+  const incomingTicketIds = new Set(records.map((r) => r.ticketId));
 
-  // 1 query: fetch semua yang sudah ada — ambil protected fields + status sekalian
+  // Fetch SEMUA ticket di DB — perlu untuk tahu mana yang harus di-delete
   const { data: existing, error: fetchError } = await supabase
     .from('tt_records')
-    .select('ticket_id, is_manually_edited, target_online_edited, reschedule_note, status')
-    .in('ticket_id', ticketIds);
+    .select('ticket_id, is_manually_edited, target_online_edited, reschedule_note, status');
 
   if (fetchError) throw fetchError;
 
-  const existingMap = new Map<string, ExistingEntry>(
-    (existing ?? []).map((e) => [
-      e.ticket_id as string,
-      {
+  const existingMap = new Map<string, ExistingEntry>();
+  const ticketIdsToDelete: string[] = [];
+
+  for (const e of existing ?? []) {
+    const tid = e.ticket_id as string;
+    if (incomingTicketIds.has(tid)) {
+      existingMap.set(tid, {
         is_manually_edited: e.is_manually_edited as boolean,
         target_online_edited: e.target_online_edited as string | null,
         reschedule_note: e.reschedule_note as string | null,
         status: e.status as string,
-      },
-    ]),
-  );
+      });
+    } else {
+      ticketIdsToDelete.push(tid);
+    }
+  }
+
+  // DELETE ticket yang ada di DB tapi sudah tidak ada di Google Sheet
+  let deleted = 0;
+  if (ticketIdsToDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('tt_records')
+      .delete()
+      .in('ticket_id', ticketIdsToDelete);
+    if (deleteError) {
+      console.error('[mergeTSVToSupabase] Delete error:', deleteError);
+    } else {
+      deleted = ticketIdsToDelete.length;
+    }
+  }
 
   const toInsert: TTRecord[] = [];
   const toUpdateFull: TTRecord[] = [];
@@ -207,6 +236,7 @@ export async function mergeTSVToSupabase(
     updatedProtected: toUpdatePartial.length,
     statusChanged,
     unchanged: 0,
+    deleted,
     totalInDB: count ?? 0,
   };
 }

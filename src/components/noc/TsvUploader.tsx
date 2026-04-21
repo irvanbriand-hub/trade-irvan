@@ -173,6 +173,7 @@ export function TsvUploader() {
                 <span className="font-medium text-foreground">{mergeResult.updatedProtected}</span> TT
               </p>
             )}
+            <p>Dihapus: <span className="font-medium text-foreground">{mergeResult.deleted}</span> TT</p>
             <p>Total aktif di database: <span className="font-medium text-foreground">{mergeResult.totalInDB}</span> TT</p>
           </div>
         </div>
