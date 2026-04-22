@@ -45,11 +45,11 @@ function pickTargetOnline(record: TTRecordDB): string {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const thStyle: React.CSSProperties = {
-  padding: '8px',
+  padding: '10px 10px',
   backgroundColor: '#FFEB3B',
   color: '#000',
   fontWeight: 700,
-  fontSize: '13px',
+  fontSize: '16px',
   textAlign: 'center',
   border: '1px solid #888',
 };
@@ -88,12 +88,12 @@ export function RTGSCaptureView({
         color: '#000',
       }}
     >
-      {/* Header kuning — nempel seamless dengan table di bawah */}
+      {/* Title bar — putih dengan teks merah, nempel seamless dengan table */}
       <div
         style={{
           padding: '10px 16px',
-          backgroundColor: '#FFD600',
-          color: '#000',
+          backgroundColor: '#FFFFFF',
+          color: '#C00000',
           fontSize: '14px',
           fontWeight: 700,
           marginBottom: 0,
@@ -122,7 +122,7 @@ export function RTGSCaptureView({
         >
           <colgroup>
             <col style={{ width: '50px' }} />   {/* No */}
-            <col style={{ width: '150px' }} />  {/* SiteID */}
+            <col style={{ width: '175px' }} />  {/* SiteID — cukup untuk 17-18 char */}
             <col style={{ width: 'auto' }} />   {/* Nama Lokasi */}
             <col style={{ width: '160px' }} />  {/* Provinsi */}
             <col style={{ width: '90px' }} />   {/* Umur Tiket */}
@@ -152,7 +152,16 @@ export function RTGSCaptureView({
               return (
                 <tr key={record.ticket_id} style={{ backgroundColor: bg }}>
                   <td style={{ ...tdBase, textAlign: 'center' }}>{idx + 1}</td>
-                  <td style={{ ...tdBase, fontFamily: 'monospace' }}>
+                  <td
+                    style={{
+                      ...tdBase,
+                      fontFamily: 'Arial, sans-serif',
+                      fontSize: '13px',
+                      wordBreak: 'keep-all',
+                      overflowWrap: 'normal',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {record.site_id ?? '-'}
                   </td>
                   <td style={tdBase}>{record.site_name}</td>
