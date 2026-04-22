@@ -290,7 +290,7 @@ export default function NOCRtgs() {
   const previewCount = records.filter((r) => isPreviewRow(r)).length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 max-w-[1400px] mx-auto px-4">
       {/* Header */}
       <div className="flex flex-wrap justify-between items-start gap-3">
         <div>
