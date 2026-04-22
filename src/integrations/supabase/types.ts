@@ -1023,6 +1023,39 @@ export type Database = {
         }
         Relationships: []
       }
+      rtgs_annotations: {
+        Row: {
+          action: string | null
+          created_at: string | null
+          id: string
+          is_action_edited: boolean | null
+          is_problem_edited: boolean | null
+          problem_analisa: string | null
+          ticket_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          action?: string | null
+          created_at?: string | null
+          id?: string
+          is_action_edited?: boolean | null
+          is_problem_edited?: boolean | null
+          problem_analisa?: string | null
+          ticket_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          action?: string | null
+          created_at?: string | null
+          id?: string
+          is_action_edited?: boolean | null
+          is_problem_edited?: boolean | null
+          problem_analisa?: string | null
+          ticket_id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       s_curve_baselines: {
         Row: {
           baseline_date: string
@@ -1818,3 +1851,5 @@ export const Constants = {
     Enums: {},
   },
 } as const
+A new version of Supabase CLI is available: v2.90.0 (currently installed v2.84.2)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli

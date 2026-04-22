@@ -952,6 +952,9 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 /scurve 1/2/3 — Per area tertentu
 /scurve last — Final report baseline terakhir (Selasa malam)
 
+*📋 RTGS Mahaga*
+/rtgs — Laporan TT open ≥ 7 hari (dengan analisa manual)
+
 /help — Tampilkan daftar ini`;
 
 async function processCommand(text: string, chatId: string) {
@@ -1093,6 +1096,34 @@ async function processCommand(text: string, chatId: string) {
           '⚠️ Argumen tidak valid. Gunakan /scurve, /scurve 1/2/3, atau /scurve last',
         );
       }
+      break;
+    }
+
+    case '/rtgs': {
+      await sendTelegramMessage(chatId, '⏳ Syncing data dari Google Sheet...');
+      try {
+        await syncFromGoogleSheet();
+      } catch (err: any) {
+        await sendTelegramMessage(
+          chatId,
+          `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`,
+        );
+      }
+      await sendTelegramMessage(chatId, '📸 Generating RTGS Mahaga report...');
+
+      const wib = getWIBParts(0);
+      const yyyy = wib.year;
+      const mm = String(wib.month + 1).padStart(2, '0');
+      const dd = String(wib.date).padStart(2, '0');
+      const now = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const hh = String(now.getUTCHours()).padStart(2, '0');
+      const mi = String(now.getUTCMinutes()).padStart(2, '0');
+
+      const captureUrl = `${APP_URL}/noc/rtgs-capture`;
+      await sendCaptureToTelegram(chatId, captureUrl, {
+        filename: `rtgs-mahaga-${yyyy}-${mm}-${dd}-${hh}${mi}.png`,
+        waitSelector: '#rtgs-capture-ready',
+      });
       break;
     }
 
