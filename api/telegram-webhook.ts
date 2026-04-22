@@ -27,6 +27,49 @@ async function sendTelegramPhoto(chatId: string, photo: Buffer, filename: string
   await fetch(`${TELEGRAM_API}/sendPhoto`, { method: 'POST', body: formData });
 }
 
+const TELEGRAM_MAX_LENGTH = 3800;
+
+function splitIntoChunks(text: string, sectionPattern?: RegExp): string[] {
+  if (text.length <= TELEGRAM_MAX_LENGTH) return [text];
+
+  const chunks: string[] = [];
+  let currentChunk = '';
+  const sections = sectionPattern ? text.split(sectionPattern) : [text];
+
+  for (const section of sections) {
+    if (section.length > TELEGRAM_MAX_LENGTH) {
+      const lines = section.split('\n');
+      for (const line of lines) {
+        if ((currentChunk + '\n' + line).length > TELEGRAM_MAX_LENGTH) {
+          if (currentChunk) chunks.push(currentChunk);
+          currentChunk = line;
+        } else {
+          currentChunk += (currentChunk ? '\n' : '') + line;
+        }
+      }
+    } else if ((currentChunk + '\n\n' + section).length > TELEGRAM_MAX_LENGTH) {
+      if (currentChunk) chunks.push(currentChunk);
+      currentChunk = section;
+    } else {
+      currentChunk += (currentChunk ? '\n\n' : '') + section;
+    }
+  }
+
+  if (currentChunk) chunks.push(currentChunk);
+
+  if (chunks.length > 1) {
+    return chunks.map((chunk, i) => `📋 *Part ${i + 1}/${chunks.length}*\n\n${chunk}`);
+  }
+  return chunks;
+}
+
+async function sendTelegramChunks(chatId: string, chunks: string[]): Promise<void> {
+  for (const chunk of chunks) {
+    await sendTelegramMessage(chatId, chunk);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
 // ─── Screenshot helper ────────────────────────────────────────────────────────
 
 async function sendCaptureToTelegram(
@@ -530,7 +573,7 @@ async function generateOverdueText({
 }: {
   minAging?: number;
   showClosed?: boolean;
-} = {}): Promise<string> {
+} = {}): Promise<string[]> {
   let query = supabaseAdmin
     .from('tt_records')
     .select('ticket_id, site_id, site_name, provinsi, kabupaten, down_time, status')
@@ -545,16 +588,18 @@ async function generateOverdueText({
     supabaseAdmin.from('po_list').select('name, kabupaten_coverage, provinsi_coverage, status'),
   ]);
 
-  if (recordsRes.error || !recordsRes.data) return '❌ Gagal mengambil data overdue.';
+  if (recordsRes.error || !recordsRes.data) return ['❌ Gagal mengambil data overdue.'];
 
   const records = recordsRes.data;
   const poList: POEntry[] = (poRes.data ?? []) as POEntry[];
   const SEP = '=========================';
 
   if (!records.length) {
-    return minAging > 0
-      ? `✅ Tidak ada TT overdue ≥${minAging} hari.`
-      : '✅ Tidak ada TT open saat ini.';
+    return [
+      minAging > 0
+        ? `✅ Tidak ada TT overdue ≥${minAging} hari.`
+        : '✅ Tidak ada TT open saat ini.',
+    ];
   }
 
   const bulanNames = [
@@ -586,10 +631,7 @@ async function generateOverdueText({
 
   text += `Total: ${records.length} TT`;
 
-  if (text.length > 4000) {
-    text = text.substring(0, 4000) + '\n... terpotong';
-  }
-  return text;
+  return splitIntoChunks(text, /\n(?=Aging \d+ Hari\n=+)/);
 }
 
 async function generateOverdueSummary(): Promise<string> {
@@ -646,7 +688,7 @@ ${topProv.map(([prov, count], i) => `  ${i + 1}. ${prov} — ${count} TT`).join(
 📈 *Rata-rata aging:* ${avgAging} hari`;
 }
 
-async function generateOverduePrediksi(): Promise<string> {
+async function generateOverduePrediksi(): Promise<string[]> {
   const [recordsRes, poRes] = await Promise.all([
     supabaseAdmin
       .from('tt_records')
@@ -662,7 +704,7 @@ async function generateOverduePrediksi(): Promise<string> {
   const today = wibDMY();
 
   if (!records.length) {
-    return `✅ Tidak ada TT yang mendekati overdue (aging 6-7 hari) — ${today}`;
+    return [`✅ Tidak ada TT yang mendekati overdue (aging 6-7 hari) — ${today}`];
   }
 
   const SEP = '=========================';
@@ -682,7 +724,7 @@ async function generateOverduePrediksi(): Promise<string> {
   }
 
   text += `⚡ Total: ${records.length} TT akan segera overdue`;
-  return text;
+  return splitIntoChunks(text, /\n(?=Aging \d+ Hari\n=+)/);
 }
 
 /** Parse "DD/MM/YY" atau "DD/MM/YYYY" → Date. Null jika tidak valid. */
@@ -696,7 +738,7 @@ function parseDMY(dateStr: string): Date | null {
   return isNaN(date.getTime()) ? null : date;
 }
 
-async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<string> {
+async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<string[]> {
   const [recordsRes, poRes] = await Promise.all([
     supabaseAdmin
       .from('tt_records')
@@ -736,7 +778,8 @@ async function generateTargetNarrative(fromDate: Date, toDate: Date): Promise<st
 
   const poListStr = [...poNames].sort().join(', ') || '-';
 
-  return `Dear all, berikut update progress penyelesaian tiket target online hari ini (${dateLabel}) dengan target online yang sudah disesuaikan dengan WM terakhir.\nTerimakasih 🙏\n\nPO: ${poListStr}`;
+  const narrative = `Dear all, berikut update progress penyelesaian tiket target online hari ini (${dateLabel}) dengan target online yang sudah disesuaikan dengan WM terakhir.\nTerimakasih 🙏\n\nPO: ${poListStr}`;
+  return splitIntoChunks(narrative);
 }
 
 async function generateSCurveSummary(
@@ -938,8 +981,8 @@ async function processCommand(text: string, chatId: string) {
 
       await sendCaptureToTelegram(chatId, captureUrl);
 
-      const narrative = await generateTargetNarrative(today, toDate);
-      await sendTelegramMessage(chatId, narrative);
+      const narrativeChunks = await generateTargetNarrative(today, toDate);
+      await sendTelegramChunks(chatId, narrativeChunks);
       break;
     }
 
@@ -970,26 +1013,26 @@ async function processCommand(text: string, chatId: string) {
         await sendTelegramMessage(chatId, `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`);
       }
 
-      let overdueText = '';
+      let chunks: string[] = [];
       if (isNumeric) {
-        overdueText = await generateOverdueText({ minAging: num });
+        chunks = await generateOverdueText({ minAging: num });
       } else {
         switch (arg) {
           case '':
-            overdueText = await generateOverdueText({ minAging: 0 });
+            chunks = await generateOverdueText({ minAging: 0 });
             break;
           case 'progress':
-            overdueText = await generateOverdueText({ showClosed: true });
+            chunks = await generateOverdueText({ showClosed: true });
             break;
           case 'summary':
-            overdueText = await generateOverdueSummary();
+            chunks = [await generateOverdueSummary()];
             break;
           case 'prediksi':
-            overdueText = await generateOverduePrediksi();
+            chunks = await generateOverduePrediksi();
             break;
         }
       }
-      await sendTelegramMessage(chatId, overdueText);
+      await sendTelegramChunks(chatId, chunks);
       break;
     }
 
