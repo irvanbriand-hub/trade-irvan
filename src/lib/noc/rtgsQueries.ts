@@ -48,13 +48,17 @@ export async function getRTGSAnnotations(): Promise<RTGSAnnotation[]> {
   return (data ?? []) as RTGSAnnotation[];
 }
 
-/** Ambil TT open dengan aging >= 7, sort by down_time DESC. */
-export async function getRTGSTickets(): Promise<TTRecordDB[]> {
+/**
+ * Ambil TT open dengan aging >= minAging, sort by down_time DESC.
+ * Default minAging = 7 (untuk capture PNG). Halaman view bisa pass 5
+ * untuk preview row aging 5-6.
+ */
+export async function getRTGSTickets(minAging = 7): Promise<TTRecordDB[]> {
   const { data, error } = await db
     .from('tt_records')
     .select('*')
     .eq('status', 'OPEN')
-    .gte('down_time', 7)
+    .gte('down_time', minAging)
     .order('down_time', { ascending: false });
 
   if (error) throw error;

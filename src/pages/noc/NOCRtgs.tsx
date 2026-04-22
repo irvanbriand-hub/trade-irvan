@@ -187,7 +187,7 @@ export default function NOCRtgs() {
     setLoading(true);
     try {
       const [tts, anns] = await Promise.all([
-        getRTGSTickets(),
+        getRTGSTickets(5),
         getRTGSAnnotations(),
       ]);
       setRecords(tts);
@@ -285,6 +285,10 @@ export default function NOCRtgs() {
   const dateLabel = formatWIBDate();
   const timeLabel = formatWIBTime();
 
+  const isPreviewRow = (r: TTRecordDB) => r.down_time < 7;
+  const captureCount = records.filter((r) => !isPreviewRow(r)).length;
+  const previewCount = records.filter((r) => isPreviewRow(r)).length;
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -292,18 +296,24 @@ export default function NOCRtgs() {
         <div>
           <h2 className="text-lg font-semibold">Tiket RTGS Mahaga</h2>
           <p className="text-xs text-muted-foreground">
-            TT open dengan aging ≥ 7 hari
+            TT open dengan aging ≥ 5 hari
           </p>
         </div>
         <div className="flex gap-2 items-center">
-          <div className="text-sm text-muted-foreground mr-2">
-            Total: <strong>{records.length} TT</strong>
+          <div className="text-xs text-muted-foreground mr-2 flex gap-3">
+            <span>
+              Akan capture:{' '}
+              <strong className="text-foreground">{captureCount} TT</strong>
+            </span>
+            <span className="text-blue-500 dark:text-blue-400">
+              Preview: <strong>{previewCount} TT</strong>
+            </span>
           </div>
           <Button
             size="sm"
             className="gap-1.5"
             onClick={handleCapture}
-            disabled={isCapturing || records.length === 0}
+            disabled={isCapturing || captureCount === 0}
           >
             <Camera className="h-3.5 w-3.5" />
             {isCapturing ? 'Capturing...' : 'Capture PNG'}
@@ -318,8 +328,10 @@ export default function NOCRtgs() {
                    rounded-md p-3 text-xs"
       >
         💡 Klik kolom <strong>Problem Hasil Analisa</strong> atau{' '}
-        <strong>Action</strong> untuk edit manual. Hasil edit persistent sampai
-        direset.
+        <strong>Action</strong> untuk edit manual. Row dengan badge{' '}
+        <strong className="text-blue-500 dark:text-blue-400">Preview</strong>{' '}
+        (aging 5-6) belum masuk capture PNG, tapi annotation-nya akan muncul
+        saat aging naik ke 7+. Bisa di-prep dari sekarang.
       </div>
 
       {/* Tabel */}
@@ -330,7 +342,7 @@ export default function NOCRtgs() {
       ) : records.length === 0 ? (
         <div className="bg-muted/30 border border-dashed border-border rounded-lg p-8 text-center">
           <p className="text-sm font-medium">
-            Tidak ada TT dengan aging ≥ 7 hari.
+            Tidak ada TT dengan aging ≥ 5 hari.
           </p>
         </div>
       ) : (
@@ -364,12 +376,32 @@ export default function NOCRtgs() {
                   editingCell?.ticketId === record.ticket_id &&
                   editingCell.field === 'action';
 
+                const isPreview = isPreviewRow(record);
+
                 return (
                   <tr
                     key={record.ticket_id}
-                    className="border-t hover:bg-accent/30"
+                    className={cn(
+                      'border-t hover:bg-accent/30',
+                      isPreview && 'bg-muted/30',
+                    )}
                   >
-                    <td className="px-2 py-2 text-center align-top">{idx + 1}</td>
+                    <td className="px-2 py-2 text-center align-top">
+                      <div className="flex flex-col items-center gap-1">
+                        <span>{idx + 1}</span>
+                        {isPreview && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded
+                                       bg-blue-500/15 text-blue-500
+                                       dark:text-blue-400
+                                       font-medium whitespace-nowrap"
+                            title="Akan masuk capture saat aging ≥ 7"
+                          >
+                            Preview
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-2 py-2 font-mono text-xs align-top">
                       {record.site_id ?? '-'}
                     </td>
@@ -437,7 +469,7 @@ export default function NOCRtgs() {
         }}
       >
         <RTGSCaptureView
-          records={records}
+          records={records.filter((r) => r.down_time >= 7)}
           annotations={annotations}
           dateLabel={dateLabel}
           timeLabel={timeLabel}
