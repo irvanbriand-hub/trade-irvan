@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LabelList,
-} from 'recharts';
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip as ChartTooltip,
+  Filler,
+  type Plugin,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
 import {
   getActiveBaseline,
   getLastCompletedBaseline,
@@ -12,6 +19,15 @@ import {
   type SCurveBaseline,
   type SCurveTarget,
 } from '@/lib/noc/scurveQueries';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ChartTooltip,
+  Filler,
+);
 
 type AreaFilter = 'global' | '1' | '2' | '3';
 
@@ -113,33 +129,106 @@ export default function NOCSCurveCapture() {
     };
   }, [baselineParam]);
 
-  const chartData = useMemo(() => {
-    if (!baseline) return [];
+  const { labels, planned, actual, totalTarget } = useMemo(() => {
+    if (!baseline) {
+      return { labels: [], planned: [], actual: [], totalTarget: 0 };
+    }
     const filtered = area === 'global'
       ? targets
       : targets.filter((t) => t.area === Number(area));
 
     const dates = getDatesBetweenISO(baseline.baseline_date, baseline.end_date);
+    const labels = dates.map(formatShort);
 
-    return dates.map((date) => {
+    // "Hari ini" WIB → UTC midnight, agar sebanding dengan dateMs
+    const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const todayMs = Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate());
+
+    const planned = dates.map((date) => {
       const dateMs = date.getTime();
-      const planned = filtered.filter((t) => {
+      return filtered.filter((t) => {
         const ms = parseIsoToMs(t.target_online);
         return ms !== null && ms <= dateMs;
       }).length;
-      const actual = filtered.filter((t) => {
+    });
+
+    const actual: (number | null)[] = dates.map((date) => {
+      const dateMs = date.getTime();
+      if (dateMs > todayMs) return null;
+      return filtered.filter((t) => {
         if (!t.is_online) return false;
         const ms = parseIsoToMs(t.actual_online);
         return ms !== null && ms <= dateMs;
       }).length;
-      return { date: formatShort(date), Planned: planned, Actual: actual };
     });
+
+    return { labels, planned, actual, totalTarget: filtered.length };
   }, [targets, baseline, area]);
 
-  const totalTarget = useMemo(() => {
-    if (area === 'global') return targets.length;
-    return targets.filter((t) => t.area === Number(area)).length;
-  }, [targets, area]);
+  const pillLabelsPlugin = useMemo<Plugin<'line'>>(
+    () => ({
+      id: 'pillLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const plannedMeta = chart.getDatasetMeta(0);
+        const actualMeta = chart.getDatasetMeta(1);
+
+        function drawPill(x: number, y: number, text: string, bg: string) {
+          ctx.font = '500 13px Arial, sans-serif';
+          const w = ctx.measureText(text).width + 14;
+          const h = 20;
+          const r = 10;
+
+          ctx.fillStyle = bg;
+          ctx.beginPath();
+          ctx.moveTo(x - w / 2 + r, y - h / 2);
+          ctx.arcTo(x + w / 2, y - h / 2, x + w / 2, y + h / 2, r);
+          ctx.arcTo(x + w / 2, y + h / 2, x - w / 2, y + h / 2, r);
+          ctx.arcTo(x - w / 2, y + h / 2, x - w / 2, y - h / 2, r);
+          ctx.arcTo(x - w / 2, y - h / 2, x + w / 2, y - h / 2, r);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, x, y);
+        }
+
+        for (let idx = 0; idx < labels.length; idx++) {
+          const pv = planned[idx];
+          const av = actual[idx];
+          const pp = plannedMeta.data[idx] as { x: number; y: number } | undefined;
+          const ap = actualMeta.data[idx] as { x: number; y: number } | undefined;
+
+          if (pv == null && av == null) continue;
+
+          if (pv != null && av == null && pp) {
+            drawPill(pp.x, pp.y - 20, String(pv), '#e57373');
+            continue;
+          }
+          if (pv == null && av != null && ap) {
+            drawPill(ap.x, ap.y - 20, String(av), '#66bb6a');
+            continue;
+          }
+
+          if (pv != null && av != null && pp && ap) {
+            if (pv === av) {
+              drawPill(pp.x, pp.y - 20, String(pv), '#e57373');
+              drawPill(ap.x, ap.y + 20, String(av), '#66bb6a');
+            } else if (av > pv) {
+              drawPill(ap.x, ap.y - 20, String(av), '#66bb6a');
+              drawPill(pp.x, pp.y + 20, String(pv), '#e57373');
+            } else {
+              drawPill(pp.x, pp.y - 20, String(pv), '#e57373');
+              drawPill(ap.x, ap.y + 20, String(av), '#66bb6a');
+            }
+          }
+        }
+      },
+    }),
+    [labels, planned, actual],
+  );
 
   if (!ready) {
     return (
@@ -198,43 +287,92 @@ export default function NOCSCurveCapture() {
         S CURVE {areaTitle} — TARGET PENYELESAIAN {totalTarget} TT
       </h1>
 
+      {/* Legend */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '24px',
+          marginBottom: '16px',
+          fontSize: '13px',
+          color: '#475569',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{ width: 12, height: 12, background: '#e57373', borderRadius: 2 }}
+          />
+          Planned
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{ width: 12, height: 12, background: '#66bb6a', borderRadius: 2 }}
+          />
+          Actual
+        </span>
+      </div>
+
       {/* Chart */}
       <div style={{ width: '100%', height: '500px' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 30, right: 40, left: 20, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="date" stroke="#475569" style={{ fontSize: '13px' }} />
-            <YAxis stroke="#475569" style={{ fontSize: '13px' }} allowDecimals={false} />
-            <RechartsTooltip
-              contentStyle={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                borderRadius: '6px',
-              }}
-            />
-            <Legend wrapperStyle={{ fontSize: '14px' }} />
-            <Line
-              type="monotone"
-              dataKey="Planned"
-              stroke="#c0504d"
-              strokeWidth={3}
-              dot={{ r: 5, fill: '#c0504d' }}
-              isAnimationActive={false}
-            >
-              <LabelList dataKey="Planned" position="top" fill="#c0504d" fontSize={12} fontWeight={600} />
-            </Line>
-            <Line
-              type="monotone"
-              dataKey="Actual"
-              stroke="#9bbb59"
-              strokeWidth={3}
-              dot={{ r: 5, fill: '#9bbb59' }}
-              isAnimationActive={false}
-            >
-              <LabelList dataKey="Actual" position="top" fill="#6b8e23" fontSize={12} fontWeight={600} />
-            </Line>
-          </LineChart>
-        </ResponsiveContainer>
+        <Line
+          data={{
+            labels,
+            datasets: [
+              {
+                label: 'Planned',
+                data: planned,
+                borderColor: '#e57373',
+                backgroundColor: '#e57373',
+                borderWidth: 3,
+                tension: 0.35,
+                pointRadius: 6,
+                pointBackgroundColor: '#e57373',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+              },
+              {
+                label: 'Actual',
+                data: actual,
+                borderColor: '#66bb6a',
+                backgroundColor: '#66bb6a',
+                borderWidth: 3,
+                tension: 0.35,
+                pointRadius: 6,
+                pointBackgroundColor: '#66bb6a',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                spanGaps: false,
+              },
+            ],
+          }}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          options={{
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false, // penting untuk Puppeteer — render langsung
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: false },
+            },
+            layout: {
+              padding: { top: 28, right: 20, left: 0, bottom: 28 },
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: Math.max(1, Math.ceil(totalTarget * 1.1)),
+                grid: { color: 'rgba(128,128,128,0.12)' },
+                ticks: { font: { size: 13 }, color: '#64748b' },
+              },
+              x: {
+                grid: { display: false },
+                ticks: { font: { size: 13 }, color: '#64748b' },
+              },
+            },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any}
+          plugins={[pillLabelsPlugin]}
+        />
       </div>
 
       {/* Footer info */}

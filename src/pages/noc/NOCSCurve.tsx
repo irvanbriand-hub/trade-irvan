@@ -1,10 +1,26 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LabelList,
-} from 'recharts';
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip as ChartTooltip,
+  Filler,
+  type Plugin,
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
 import { AlertTriangle, Pin, Trash2 } from 'lucide-react';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  ChartTooltip,
+  Filler,
+);
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -80,76 +96,209 @@ interface ChartProps {
 }
 
 function SCurveChart({ targets, baseline, area }: ChartProps) {
-  const chartData = useMemo(() => {
+  const { labels, planned, actual, totalTarget } = useMemo(() => {
     const filtered = area === 'global'
       ? targets
       : targets.filter((t) => t.area === Number(area));
 
     const dates = getDatesBetweenISO(baseline.baseline_date, baseline.end_date);
+    const labels = dates.map(formatShort);
 
-    return dates.map((date) => {
+    // "Hari ini" dalam zona WIB, di-snap ke UTC midnight agar sebanding
+    // dengan dateMs dari getDatesBetweenISO.
+    const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const todayMs = Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate());
+
+    const planned = dates.map((date) => {
       const dateMs = date.getTime();
-
-      const planned = filtered.filter((t) => {
+      return filtered.filter((t) => {
         const ms = parseIsoToMs(t.target_online);
         return ms !== null && ms <= dateMs;
       }).length;
+    });
 
-      const actual = filtered.filter((t) => {
+    const actual: (number | null)[] = dates.map((date) => {
+      const dateMs = date.getTime();
+      if (dateMs > todayMs) return null; // belum terjadi → putus garis
+      return filtered.filter((t) => {
         if (!t.is_online) return false;
         const ms = parseIsoToMs(t.actual_online);
         return ms !== null && ms <= dateMs;
       }).length;
-
-      return { date: formatShort(date), Planned: planned, Actual: actual };
     });
-  }, [targets, baseline, area]);
 
-  const totalTarget = area === 'global'
-    ? targets.length
-    : targets.filter((t) => t.area === Number(area)).length;
+    return {
+      labels,
+      planned,
+      actual,
+      totalTarget: filtered.length,
+    };
+  }, [targets, baseline, area]);
 
   const areaLabel = area === 'global' ? 'Global' : `Area ${area}`;
 
-  return (
-    <div className="bg-card border border-border p-4 rounded-lg">
-      <h3 className="text-sm font-semibold mb-4">
-        S-Curve {areaLabel} — Total Target: {totalTarget} TT
-      </h3>
+  const pillLabelsPlugin = useMemo<Plugin<'line'>>(
+    () => ({
+      id: 'pillLabels',
+      afterDatasetsDraw(chart) {
+        const { ctx } = chart;
+        const plannedMeta = chart.getDatasetMeta(0);
+        const actualMeta = chart.getDatasetMeta(1);
 
-      <ResponsiveContainer width="100%" height={400}>
-        <LineChart data={chartData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-          <XAxis dataKey="date" className="text-xs" />
-          <YAxis className="text-xs" allowDecimals={false} />
-          <RechartsTooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--card))',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '0.5rem',
-            }}
-          />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="Planned"
-            stroke="#c0504d"
-            strokeWidth={2}
-            dot={{ r: 4 }}
-          >
-            <LabelList dataKey="Planned" position="top" fill="#c0504d" fontSize={11} />
-          </Line>
-          <Line
-            type="monotone"
-            dataKey="Actual"
-            stroke="#9bbb59"
-            strokeWidth={2}
-            dot={{ r: 4 }}
-          >
-            <LabelList dataKey="Actual" position="top" fill="#9bbb59" fontSize={11} />
-          </Line>
-        </LineChart>
-      </ResponsiveContainer>
+        function drawPill(x: number, y: number, text: string, bg: string) {
+          ctx.font = '500 11px -apple-system, system-ui, sans-serif';
+          const w = ctx.measureText(text).width + 10;
+          const h = 16;
+          const r = 8;
+
+          ctx.fillStyle = bg;
+          ctx.beginPath();
+          ctx.moveTo(x - w / 2 + r, y - h / 2);
+          ctx.arcTo(x + w / 2, y - h / 2, x + w / 2, y + h / 2, r);
+          ctx.arcTo(x + w / 2, y + h / 2, x - w / 2, y + h / 2, r);
+          ctx.arcTo(x - w / 2, y + h / 2, x - w / 2, y - h / 2, r);
+          ctx.arcTo(x - w / 2, y - h / 2, x + w / 2, y - h / 2, r);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, x, y);
+        }
+
+        for (let idx = 0; idx < labels.length; idx++) {
+          const pv = planned[idx];
+          const av = actual[idx];
+          const pp = plannedMeta.data[idx] as { x: number; y: number } | undefined;
+          const ap = actualMeta.data[idx] as { x: number; y: number } | undefined;
+
+          if (pv == null && av == null) continue;
+
+          if (pv != null && av == null && pp) {
+            drawPill(pp.x, pp.y - 16, String(pv), '#e57373');
+            continue;
+          }
+          if (pv == null && av != null && ap) {
+            drawPill(ap.x, ap.y - 16, String(av), '#66bb6a');
+            continue;
+          }
+
+          if (pv != null && av != null && pp && ap) {
+            if (pv === av) {
+              drawPill(pp.x, pp.y - 16, String(pv), '#e57373');
+              drawPill(ap.x, ap.y + 16, String(av), '#66bb6a');
+            } else if (av > pv) {
+              drawPill(ap.x, ap.y - 16, String(av), '#66bb6a');
+              drawPill(pp.x, pp.y + 16, String(pv), '#e57373');
+            } else {
+              drawPill(pp.x, pp.y - 16, String(pv), '#e57373');
+              drawPill(ap.x, ap.y + 16, String(av), '#66bb6a');
+            }
+          }
+        }
+      },
+    }),
+    [labels, planned, actual],
+  );
+
+  const chartData = {
+    labels,
+    datasets: [
+      {
+        label: 'Planned',
+        data: planned,
+        borderColor: '#e57373',
+        backgroundColor: '#e57373',
+        borderWidth: 2.5,
+        tension: 0.35,
+        pointRadius: 5,
+        pointBackgroundColor: '#e57373',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1.5,
+      },
+      {
+        label: 'Actual',
+        data: actual,
+        borderColor: '#66bb6a',
+        backgroundColor: '#66bb6a',
+        borderWidth: 2.5,
+        tension: 0.35,
+        pointRadius: 5,
+        pointBackgroundColor: '#66bb6a',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1.5,
+        spanGaps: false,
+      },
+    ],
+  };
+
+  // Cast options to any agar tidak tabrak dengan typing ketat dari Chart.js;
+  // struktur di bawah ini sudah match ChartOptions<'line'> secara runtime.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const chartOptions: any = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#1e293b',
+        titleColor: '#fff',
+        bodyColor: '#fff',
+        padding: 10,
+        cornerRadius: 6,
+        displayColors: true,
+        boxPadding: 4,
+        callbacks: {
+          label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
+            `${ctx.dataset.label}: ${ctx.parsed.y ?? '-'} TT`,
+        },
+      },
+    },
+    layout: {
+      padding: { top: 24, right: 10, left: 0, bottom: 24 },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        max: Math.max(1, Math.ceil(totalTarget * 1.1)),
+        grid: { color: 'rgba(128,128,128,0.1)' },
+        ticks: { font: { size: 11 }, color: '#888' },
+      },
+      x: {
+        grid: { display: false },
+        ticks: { font: { size: 11 }, color: '#888' },
+      },
+    },
+  };
+
+  return (
+    <div className="bg-card rounded-lg p-5 border">
+      <div className="flex justify-between items-baseline mb-3">
+        <div className="text-sm font-medium">
+          S-Curve {areaLabel} — Target {totalTarget} TT
+        </div>
+        <div className="flex gap-3 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block rounded-sm"
+              style={{ width: 10, height: 10, background: '#e57373' }}
+            />
+            Planned
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className="inline-block rounded-sm"
+              style={{ width: 10, height: 10, background: '#66bb6a' }}
+            />
+            Actual
+          </span>
+        </div>
+      </div>
+
+      <div className="relative w-full" style={{ height: 320 }}>
+        <Line data={chartData} options={chartOptions} plugins={[pillLabelsPlugin]} />
+      </div>
     </div>
   );
 }
