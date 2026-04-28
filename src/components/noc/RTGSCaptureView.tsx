@@ -2,6 +2,8 @@ import type React from 'react';
 import {
   getEffectiveProblem,
   getEffectiveAction,
+  getEffectiveKendala,
+  getEffectivePlanTargetOnline,
   type RTGSAnnotation,
 } from '@/lib/noc/rtgsQueries';
 import type { TTRecordDB } from '@/lib/noc/types';
@@ -128,7 +130,9 @@ export function RTGSCaptureView({
             <col style={{ width: '90px' }} />   {/* Umur Tiket */}
             <col style={{ width: 'auto' }} />   {/* Problem Analisa */}
             <col style={{ width: 'auto' }} />   {/* Action */}
-            <col style={{ width: '100px' }} />  {/* Target Online */}
+            <col style={{ width: 'auto' }} />   {/* Kendala */}
+            <col style={{ width: '100px' }} />  {/* Plan Target Online */}
+            <col style={{ width: '100px' }} />  {/* Update Target Online */}
           </colgroup>
           <thead>
             <tr>
@@ -139,7 +143,9 @@ export function RTGSCaptureView({
               <th style={thStyle}>Umur Tiket (hari)</th>
               <th style={thStyle}>Problem Hasil Analisa</th>
               <th style={thStyle}>Action</th>
-              <th style={thStyle}>Target Online</th>
+              <th style={thStyle}>Kendala</th>
+              <th style={thStyle}>Plan Target Online</th>
+              <th style={thStyle}>Update Target Online</th>
             </tr>
           </thead>
           <tbody>
@@ -171,6 +177,10 @@ export function RTGSCaptureView({
                   </td>
                   <td style={tdBase}>{problem}</td>
                   <td style={tdBase}>{action}</td>
+                  <td style={tdBase}>{getEffectiveKendala(annotation)}</td>
+                  <td style={{ ...tdBase, textAlign: 'center' }}>
+                    {formatTargetDate(getEffectivePlanTargetOnline(annotation))}
+                  </td>
                   <td style={{ ...tdBase, textAlign: 'center' }}>
                     {formatTargetDate(pickTargetOnline(record))}
                   </td>

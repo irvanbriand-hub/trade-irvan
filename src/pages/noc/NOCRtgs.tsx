@@ -11,6 +11,8 @@ import {
   resetAnnotationField,
   getEffectiveProblem,
   getEffectiveAction,
+  getEffectiveKendala,
+  getEffectivePlanTargetOnline,
   type RTGSAnnotation,
   type RTGSField,
 } from '@/lib/noc/rtgsQueries';
@@ -327,8 +329,9 @@ export default function NOCRtgs() {
                    border border-amber-200 dark:border-amber-900
                    rounded-md p-3 text-xs"
       >
-        💡 Klik kolom <strong>Problem Hasil Analisa</strong> atau{' '}
-        <strong>Action</strong> untuk edit manual. Row dengan badge{' '}
+        💡 Klik kolom <strong>Problem Hasil Analisa</strong>,{' '}
+        <strong>Action</strong>, <strong>Kendala</strong>, atau{' '}
+        <strong>Plan Target Online</strong> untuk edit manual. Row dengan badge{' '}
         <strong className="text-blue-500 dark:text-blue-400">Preview</strong>{' '}
         (aging 5-6) belum masuk capture PNG, tapi annotation-nya akan muncul
         saat aging naik ke 7+. Bisa di-prep dari sekarang.
@@ -357,7 +360,9 @@ export default function NOCRtgs() {
                 <th className="px-2 py-2 w-24 text-center">Umur Tiket (hari)</th>
                 <th className="px-2 py-2 text-left">Problem Hasil Analisa</th>
                 <th className="px-2 py-2 text-left">Action</th>
-                <th className="px-2 py-2 w-28 text-center">Target Online</th>
+                <th className="px-2 py-2 text-left">Kendala</th>
+                <th className="px-2 py-2 w-28 text-center">Plan Target Online</th>
+                <th className="px-2 py-2 w-28 text-center">Update Target Online</th>
               </tr>
             </thead>
             <tbody>
@@ -369,12 +374,21 @@ export default function NOCRtgs() {
                 const action = getEffectiveAction(annotation);
                 const isProblemEdited = annotation?.is_problem_edited ?? false;
                 const isActionEdited = annotation?.is_action_edited ?? false;
+                const isKendalaEdited = annotation?.is_kendala_edited ?? false;
+                const isPlanTargetEdited =
+                  annotation?.is_plan_target_online_edited ?? false;
                 const isProblemEditing =
                   editingCell?.ticketId === record.ticket_id &&
                   editingCell.field === 'problem_analisa';
                 const isActionEditing =
                   editingCell?.ticketId === record.ticket_id &&
                   editingCell.field === 'action';
+                const isKendalaEditing =
+                  editingCell?.ticketId === record.ticket_id &&
+                  editingCell.field === 'kendala';
+                const isPlanTargetEditing =
+                  editingCell?.ticketId === record.ticket_id &&
+                  editingCell.field === 'plan_target_online';
 
                 const isPreview = isPreviewRow(record);
 
@@ -445,6 +459,40 @@ export default function NOCRtgs() {
                       onSave={(v) => handleSave(record.ticket_id, 'action', v)}
                       onCancel={() => setEditingCell(null)}
                       onReset={() => handleReset(record.ticket_id, 'action')}
+                    />
+
+                    <EditableCell
+                      value={getEffectiveKendala(annotation)}
+                      isEdited={isKendalaEdited}
+                      isEditing={isKendalaEditing}
+                      onEditStart={() =>
+                        setEditingCell({
+                          ticketId: record.ticket_id,
+                          field: 'kendala',
+                        })
+                      }
+                      onSave={(v) => handleSave(record.ticket_id, 'kendala', v)}
+                      onCancel={() => setEditingCell(null)}
+                      onReset={() => handleReset(record.ticket_id, 'kendala')}
+                    />
+
+                    <EditableCell
+                      value={getEffectivePlanTargetOnline(annotation)}
+                      isEdited={isPlanTargetEdited}
+                      isEditing={isPlanTargetEditing}
+                      onEditStart={() =>
+                        setEditingCell({
+                          ticketId: record.ticket_id,
+                          field: 'plan_target_online',
+                        })
+                      }
+                      onSave={(v) =>
+                        handleSave(record.ticket_id, 'plan_target_online', v)
+                      }
+                      onCancel={() => setEditingCell(null)}
+                      onReset={() =>
+                        handleReset(record.ticket_id, 'plan_target_online')
+                      }
                     />
 
                     <td className="px-2 py-2 text-center align-top">

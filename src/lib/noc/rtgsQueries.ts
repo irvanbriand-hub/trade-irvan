@@ -13,13 +13,35 @@ export interface RTGSAnnotation {
   ticket_id: string;
   problem_analisa: string | null;
   action: string | null;
+  kendala: string | null;
+  plan_target_online: string | null;
   is_problem_edited: boolean;
   is_action_edited: boolean;
+  is_kendala_edited: boolean;
+  is_plan_target_online_edited: boolean;
   created_at: string;
   updated_at: string;
 }
 
-export type RTGSField = 'problem_analisa' | 'action';
+export type RTGSField =
+  | 'problem_analisa'
+  | 'action'
+  | 'kendala'
+  | 'plan_target_online';
+
+const FIELD_FLAG_MAP: Record<RTGSField, keyof RTGSAnnotation> = {
+  problem_analisa: 'is_problem_edited',
+  action: 'is_action_edited',
+  kendala: 'is_kendala_edited',
+  plan_target_online: 'is_plan_target_online_edited',
+};
+
+const ALL_FIELDS: RTGSField[] = [
+  'problem_analisa',
+  'action',
+  'kendala',
+  'plan_target_online',
+];
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -67,8 +89,8 @@ export async function getRTGSTickets(minAging = 7): Promise<TTRecordDB[]> {
 
 /**
  * Upsert satu field annotation untuk ticket tertentu.
- * - Set flag is_*_edited = true.
- * - Field yang lain dipertahankan dari row existing (kalau ada).
+ * - Set flag is_*_edited = true untuk field target.
+ * - Semua field lain di-preserve dari row existing (kalau ada).
  */
 export async function upsertAnnotation(
   ticketId: string,
@@ -87,19 +109,15 @@ export async function upsertAnnotation(
   const updateData: any = {
     ticket_id: ticketId,
     [field]: value,
+    [FIELD_FLAG_MAP[field]]: true,
   };
 
-  if (field === 'problem_analisa') {
-    updateData.is_problem_edited = true;
-    if (existing) {
-      updateData.action = existing.action;
-      updateData.is_action_edited = existing.is_action_edited;
-    }
-  } else {
-    updateData.is_action_edited = true;
-    if (existing) {
-      updateData.problem_analisa = existing.problem_analisa;
-      updateData.is_problem_edited = existing.is_problem_edited;
+  if (existing) {
+    for (const otherField of ALL_FIELDS) {
+      if (otherField === field) continue;
+      updateData[otherField] = existing[otherField];
+      const flagCol = FIELD_FLAG_MAP[otherField];
+      updateData[flagCol] = existing[flagCol];
     }
   }
 
@@ -118,13 +136,8 @@ export async function resetAnnotationField(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: any = {
     [field]: null,
+    [FIELD_FLAG_MAP[field]]: false,
   };
-
-  if (field === 'problem_analisa') {
-    updateData.is_problem_edited = false;
-  } else {
-    updateData.is_action_edited = false;
-  }
 
   const { error } = await db
     .from('rtgs_annotations')
@@ -168,4 +181,27 @@ export function getEffectiveAction(annotation: RTGSAnnotation | null): string {
     return annotation.action;
   }
   return DEFAULT_ACTION;
+}
+
+/** Compute effective Kendala. Default '-' kalau belum diedit. */
+export function getEffectiveKendala(annotation: RTGSAnnotation | null): string {
+  if (annotation?.is_kendala_edited && annotation.kendala) {
+    return annotation.kendala;
+  }
+  return '-';
+}
+
+/**
+ * Compute effective Plan Target Online.
+ * Sumber bisa snapshot otomatis (saat sync TSV pertama) atau manual edit.
+ * Helper ini tidak peduli sumbernya — cukup return apapun yang ada di kolom.
+ * Flag `is_plan_target_online_edited` hanya untuk visual indicator manual edit.
+ */
+export function getEffectivePlanTargetOnline(
+  annotation: RTGSAnnotation | null,
+): string {
+  if (annotation?.plan_target_online) {
+    return annotation.plan_target_online;
+  }
+  return '-';
 }
