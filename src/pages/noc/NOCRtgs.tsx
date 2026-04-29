@@ -18,6 +18,7 @@ import {
 } from '@/lib/noc/rtgsQueries';
 import type { TTRecordDB } from '@/lib/noc/types';
 import { RTGSCaptureView } from '@/components/noc/RTGSCaptureView';
+import { useNOC } from '@/lib/noc/hooks/useNOC';
 
 // ─── Date helpers (WIB) ──────────────────────────────────────────────────────
 
@@ -175,6 +176,7 @@ function EditableCell({
 
 export default function NOCRtgs() {
   const { toast } = useToast();
+  const { getSiteNote } = useNOC();
   const [records, setRecords] = useState<TTRecordDB[]>([]);
   const [annotations, setAnnotations] = useState<RTGSAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -363,6 +365,7 @@ export default function NOCRtgs() {
                 <th className="px-2 py-2 text-left">Kendala</th>
                 <th className="px-2 py-2 w-28 text-center">Plan Target Online</th>
                 <th className="px-2 py-2 w-28 text-center">Update Target Online</th>
+                <th className="px-2 py-2 w-56 text-left">Note Recap (referensi)</th>
               </tr>
             </thead>
             <tbody>
@@ -497,6 +500,17 @@ export default function NOCRtgs() {
 
                     <td className="px-2 py-2 text-center align-top">
                       {formatTargetDateInline(pickTargetOnline(record))}
+                    </td>
+
+                    <td className="px-2 py-2 align-top text-xs text-muted-foreground">
+                      {(() => {
+                        const note = record.site_id
+                          ? getSiteNote(record.site_id)?.note?.trim()
+                          : '';
+                        return note
+                          ? <span className="whitespace-pre-wrap text-foreground/80">{note}</span>
+                          : <span className="opacity-50">-</span>;
+                      })()}
                     </td>
                   </tr>
                 );
