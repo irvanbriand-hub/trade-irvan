@@ -47,6 +47,20 @@ function formatNowWIB(): string {
   return `${d}/${m}/${y} ${hh}:${mm} WIB`;
 }
 
+const BULAN_ID_UPPER = [
+  'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
+  'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER',
+];
+
+/** ISO 'YYYY-MM-DD' → '28 APRIL' (untuk judul "WM 28 APRIL"). */
+function formatBaselineDayMonth(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  const day = parseInt(m[3], 10);
+  const month = BULAN_ID_UPPER[parseInt(m[2], 10) - 1] ?? '';
+  return `${day} ${month}`;
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function NOCSCurveCapture() {
@@ -214,7 +228,8 @@ export default function NOCSCurveCapture() {
     );
   }
 
-  const areaTitle = area === 'global' ? 'GLOBAL' : `AREA ${area}`;
+  const areaSuffix = area === 'global' ? '' : ` AREA ${area}`;
+  const wmLabel = baseline ? formatBaselineDayMonth(baseline.baseline_date) : '';
 
   return (
     <div
@@ -238,7 +253,7 @@ export default function NOCSCurveCapture() {
           letterSpacing: '0.02em',
         }}
       >
-        S CURVE {areaTitle} — TARGET PENYELESAIAN {totalTarget} TT
+        S CURVE{areaSuffix} TARGET PENYELESAIAN TT WM {wmLabel}
       </h1>
 
       {/* Legend */}
