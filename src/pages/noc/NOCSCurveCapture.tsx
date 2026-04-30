@@ -19,6 +19,11 @@ import {
   type SCurveBaseline,
   type SCurveTarget,
 } from '@/lib/noc/scurveQueries';
+import {
+  computeSCurveSeries,
+  type SCurveAreaFilter,
+} from '@/lib/noc/scurveSeries';
+import { SCurveBreakdownTable } from '@/components/noc/scurve/SCurveBreakdownTable';
 
 ChartJS.register(
   CategoryScale,
@@ -29,34 +34,7 @@ ChartJS.register(
   Filler,
 );
 
-type AreaFilter = 'global' | '1' | '2' | '3';
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function getDatesBetweenISO(startIso: string, endIso: string): Date[] {
-  const result: Date[] = [];
-  const start = new Date(`${startIso}T00:00:00Z`);
-  const end = new Date(`${endIso}T00:00:00Z`);
-  const current = new Date(start);
-  while (current <= end) {
-    result.push(new Date(current));
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-  return result;
-}
-
-function formatShort(date: Date): string {
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${d}/${m}`;
-}
-
-function parseIsoToMs(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  return Date.UTC(+m[1], +m[2] - 1, +m[3]);
-}
 
 function formatNowWIB(): string {
   const now = new Date();
@@ -73,7 +51,7 @@ function formatNowWIB(): string {
 
 export default function NOCSCurveCapture() {
   const [searchParams] = useSearchParams();
-  const area = (searchParams.get('area') || 'global') as AreaFilter;
+  const area = (searchParams.get('area') || 'global') as SCurveAreaFilter;
   const baselineParam = searchParams.get('baseline') || 'active';
 
   const [ready, setReady] = useState(false);
@@ -129,41 +107,17 @@ export default function NOCSCurveCapture() {
     };
   }, [baselineParam]);
 
-  const { labels, planned, actual, totalTarget } = useMemo(() => {
-    if (!baseline) {
-      return { labels: [], planned: [], actual: [], totalTarget: 0 };
-    }
-    const filtered = area === 'global'
-      ? targets
-      : targets.filter((t) => t.area === Number(area));
-
-    const dates = getDatesBetweenISO(baseline.baseline_date, baseline.end_date);
-    const labels = dates.map(formatShort);
-
-    // "Hari ini" WIB → UTC midnight, agar sebanding dengan dateMs
-    const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-    const todayMs = Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate());
-
-    const planned = dates.map((date) => {
-      const dateMs = date.getTime();
-      return filtered.filter((t) => {
-        const ms = parseIsoToMs(t.target_online);
-        return ms !== null && ms <= dateMs;
-      }).length;
-    });
-
-    const actual: (number | null)[] = dates.map((date) => {
-      const dateMs = date.getTime();
-      if (dateMs > todayMs) return null;
-      return filtered.filter((t) => {
-        if (!t.is_online) return false;
-        const ms = parseIsoToMs(t.actual_online);
-        return ms !== null && ms <= dateMs;
-      }).length;
-    });
-
-    return { labels, planned, actual, totalTarget: filtered.length };
+  const series = useMemo(() => {
+    if (!baseline) return null;
+    return computeSCurveSeries(targets, baseline, area);
   }, [targets, baseline, area]);
+
+  const { labels, planned, actual, totalTarget } = series ?? {
+    labels: [],
+    planned: [],
+    actual: [],
+    totalTarget: 0,
+  };
 
   const pillLabelsPlugin = useMemo<Plugin<'line'>>(
     () => ({
@@ -345,7 +299,6 @@ export default function NOCSCurveCapture() {
               },
             ],
           }}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           options={{
             responsive: true,
             maintainAspectRatio: false,
@@ -374,6 +327,13 @@ export default function NOCSCurveCapture() {
           plugins={[pillLabelsPlugin]}
         />
       </div>
+
+      {/* Breakdown table */}
+      {series && (
+        <div style={{ marginTop: '24px' }}>
+          <SCurveBreakdownTable series={series} />
+        </div>
+      )}
 
       {/* Footer info */}
       <div

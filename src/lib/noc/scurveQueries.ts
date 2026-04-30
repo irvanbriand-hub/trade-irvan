@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { AREA_MAP } from './constants';
 import { getPO } from './classifiers';
 import type { PO, TTRecordDB } from './types';
+import type { SCurveUploadRow } from './scurveUploadParser';
 
 // s_curve_baselines & s_curve_targets belum ada di generated Database types.
 // Pakai cast ini untuk semua query ke tabel S-Curve sampai `supabase gen types` dijalankan ulang.
@@ -54,12 +55,6 @@ function getWIBDate(offsetDays = 0): string {
   return wib.toISOString().split('T')[0];
 }
 
-function addDays(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().split('T')[0];
-}
-
 /**
  * Parse tanggal fleksibel ke ISO 'YYYY-MM-DD'.
  * Terima: "DD/M/YY", "DD/MM/YYYY", "YYYY-MM-DD".
@@ -104,24 +99,46 @@ function formatBaselineLabel(isoDate: string): string {
 // ─── Main functions ──────────────────────────────────────────────────────────
 
 /**
- * Snapshot semua TT OPEN saat ini jadi baseline S-Curve baru.
+ * Buat baseline S-Curve dari hasil upload manual (Excel / CSV / paste TSV).
+ * Source of truth: list site dari user, BUKAN snapshot tt_records.
+ *
  * Alur:
- *  1. Ambil TT OPEN + PO list
- *  2. Kalau ada baseline di tanggal WIB hari ini → delete (cascade ke targets)
- *  3. Tandai semua baseline 'active' lain → 'completed'
- *  4. Insert baseline baru (status='active')
- *  5. Snapshot semua TT OPEN ke s_curve_targets
+ *  1. Validasi: minimal 1 row valid
+ *  2. Ambil TT OPEN dari tt_records → map by site_id (uppercase) untuk resolve metadata
+ *  3. Ambil PO list active untuk resolve PO/area
+ *  4. Tanggal baseline = WIB today; kalau ada baseline di tanggal sama → delete (replaced=true)
+ *  5. Tandai semua baseline 'active' lain → 'completed'
+ *  6. Insert baseline baru
+ *  7. Untuk tiap upload row:
+ *     - Site ada di tt_records OPEN → masuk sebagai outstanding (is_online=false), metadata
+ *       (site_name, provinsi, kabupaten, ticket_id) diisi dari tt_records
+ *     - Site tidak ada → dianggap close on-time: is_online=true, actual_online=target_online,
+ *       metadata kosong (site_name='Unknown', area=0), ticket_id pakai site_id sebagai placeholder
+ *  8. Bulk insert ke s_curve_targets
  */
-export async function fixTargetBaseline(): Promise<FixTargetResult> {
-  // 1. TT OPEN
+export async function createBaselineFromUpload(
+  uploadRows: SCurveUploadRow[],
+  baselineDateISO: string,
+): Promise<FixTargetResult> {
+  if (uploadRows.length === 0) {
+    throw new Error('Tidak ada baris valid di data upload');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(baselineDateISO)) {
+    throw new Error('Tanggal baseline tidak valid (harus YYYY-MM-DD)');
+  }
+
+  // 1. TT OPEN — buat lookup map by site_id (uppercase, sama seperti parser)
   const { data: openRecords, error: ttError } = await db
     .from('tt_records')
     .select('*')
     .eq('status', 'OPEN');
 
   if (ttError) throw ttError;
-  if (!openRecords || openRecords.length === 0) {
-    throw new Error('Tidak ada TT OPEN untuk dijadikan baseline');
+
+  const ttMap = new Map<string, TTRecordDB>();
+  for (const r of (openRecords as TTRecordDB[]) ?? []) {
+    const sid = (r.site_id ?? '').toUpperCase().trim();
+    if (sid && !ttMap.has(sid)) ttMap.set(sid, r);
   }
 
   // 2. PO list
@@ -132,9 +149,16 @@ export async function fixTargetBaseline(): Promise<FixTargetResult> {
 
   if (poError) throw poError;
 
-  // 3. Tanggal baseline (WIB)
-  const baselineDate = getWIBDate();
-  const endDate = addDays(baselineDate, 7);
+  // 3. Baseline date dari user, end_date = max target_online (atau baseline_date kalau lebih kecil)
+  const baselineDate = baselineDateISO;
+  const targetDates = uploadRows
+    .map((r) => r.target_online)
+    .filter((d): d is string => !!d);
+  const maxTarget = targetDates.reduce(
+    (acc, cur) => (cur > acc ? cur : acc),
+    baselineDate,
+  );
+  const endDate = maxTarget > baselineDate ? maxTarget : baselineDate;
   const label = formatBaselineLabel(baselineDate);
 
   // 4. Cek baseline di tanggal yang sama → override
@@ -173,7 +197,7 @@ export async function fixTargetBaseline(): Promise<FixTargetResult> {
       baseline_date: baselineDate,
       end_date: endDate,
       label,
-      total_target: openRecords.length,
+      total_target: uploadRows.length,
       status: 'active',
     })
     .select()
@@ -181,20 +205,71 @@ export async function fixTargetBaseline(): Promise<FixTargetResult> {
 
   if (insertError) throw insertError;
 
-  // 7. Snapshot TT OPEN ke s_curve_targets
-  const records = openRecords as unknown as TTRecordDB[];
-  const targets = records.map((r) => {
-    const po = getPO(r.provinsi ?? '', r.kabupaten ?? '', (poList as PO[]) ?? []);
+  const baselineId = (newBaseline as SCurveBaseline).id;
+  const nowIso = new Date().toISOString();
+  const poListTyped = (poList as PO[]) ?? [];
+
+  // 7. Build targets dari upload rows.
+  //
+  // Resolusi actual_online (priority):
+  //  a) Kalau row.actual_online di-isi user di upload → SELALU pakai itu, mark online.
+  //     (Override valid baik untuk site di tt_records maupun yang tidak.)
+  //  b) Kalau kosong + site ada di tt_records OPEN → outstanding (is_online=false),
+  //     auto-sync via updateBaselineActuals() saat sync TT.
+  //  c) Kalau kosong + site tidak ada di tt_records → fallback close di baseline_date
+  //     (asumsi sudah online sebelum tracking dimulai).
+  const targets = uploadRows.map((row) => {
+    const existingTT = ttMap.get(row.site_id);
+    const userActual = row.actual_online; // null kalau tidak diisi
+
+    if (existingTT) {
+      const po = getPO(
+        existingTT.provinsi ?? '',
+        existingTT.kabupaten ?? '',
+        poListTyped,
+      );
+      const baseFields = {
+        baseline_id: baselineId,
+        site_id: row.site_id,
+        ticket_id: existingTT.ticket_id,
+        site_name: existingTT.site_name ?? null,
+        target_online: row.target_online,
+        po_name: po?.name ?? 'Unknown',
+        provinsi: existingTT.provinsi ?? null,
+        kabupaten: existingTT.kabupaten ?? null,
+        area: getAreaFromProvinsi(existingTT.provinsi),
+      };
+      if (userActual) {
+        return {
+          ...baseFields,
+          actual_online: userActual,
+          is_online: true,
+          online_detected_at: nowIso,
+        };
+      }
+      return {
+        ...baseFields,
+        actual_online: null,
+        is_online: false,
+        online_detected_at: null,
+      };
+    }
+
+    // Site tidak ada di tt_records OPEN.
+    // site_name = null supaya UI fallback ke site_id, bukan menampilkan literal "Unknown".
     return {
-      baseline_id: (newBaseline as SCurveBaseline).id,
-      site_id: r.site_id ?? '',
-      ticket_id: r.ticket_id,
-      site_name: r.site_name ?? null,
-      target_online: parseTargetToISODate(r.target_online_original),
-      po_name: po?.name ?? 'Unknown',
-      provinsi: r.provinsi ?? null,
-      kabupaten: r.kabupaten ?? null,
-      area: getAreaFromProvinsi(r.provinsi),
+      baseline_id: baselineId,
+      site_id: row.site_id,
+      ticket_id: row.site_id, // placeholder unique per site, tidak akan dipakai matching
+      site_name: null,
+      target_online: row.target_online,
+      actual_online: userActual ?? baselineDate,
+      is_online: true,
+      online_detected_at: nowIso,
+      po_name: null,
+      provinsi: null,
+      kabupaten: null,
+      area: 0,
     };
   });
 
@@ -205,8 +280,8 @@ export async function fixTargetBaseline(): Promise<FixTargetResult> {
   if (targetsError) throw targetsError;
 
   return {
-    baselineId: (newBaseline as SCurveBaseline).id,
-    totalTarget: openRecords.length,
+    baselineId,
+    totalTarget: uploadRows.length,
     label,
     replaced,
   };
@@ -359,16 +434,21 @@ export async function updateBaselineActuals(): Promise<number> {
 }
 
 /**
- * Hitung jumlah TT dengan status OPEN saat ini. Dipakai di Fix Target dialog
- * untuk preview berapa site yang akan di-snapshot.
+ * Ambil semua site_id (uppercase) dari tt_records dengan status='OPEN'.
+ * Dipakai di Upload Dialog untuk preview cross-check site upload vs daily tracker.
  */
-export async function getOpenTTCount(): Promise<number> {
-  const { count, error } = await db
+export async function getOpenSiteIds(): Promise<string[]> {
+  const { data, error } = await db
     .from('tt_records')
-    .select('*', { count: 'exact', head: true })
+    .select('site_id')
     .eq('status', 'OPEN');
   if (error) throw error;
-  return count ?? 0;
+  const set = new Set<string>();
+  for (const r of (data as Array<{ site_id: string | null }>) ?? []) {
+    const sid = (r.site_id ?? '').toUpperCase().trim();
+    if (sid) set.add(sid);
+  }
+  return Array.from(set);
 }
 
 /**

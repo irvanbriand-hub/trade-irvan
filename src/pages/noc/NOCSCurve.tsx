@@ -11,7 +11,7 @@ import {
   type Plugin,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { AlertTriangle, Pin, Trash2 } from 'lucide-react';
+import { Trash2, Upload } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -24,7 +24,6 @@ ChartJS.register(
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,38 +39,24 @@ import {
 } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import {
-  fixTargetBaseline,
+  createBaselineFromUpload,
   getActiveBaseline,
   getTargetsByBaseline,
-  getOpenTTCount,
   resetActiveBaseline,
   type SCurveBaseline,
   type SCurveTarget,
 } from '@/lib/noc/scurveQueries';
+import {
+  computeSCurveSeries,
+  type SCurveSeries,
+} from '@/lib/noc/scurveSeries';
+import { SCurveUploadDialog } from '@/components/noc/scurve/SCurveUploadDialog';
+import { SCurveBreakdownTable } from '@/components/noc/scurve/SCurveBreakdownTable';
+import type { SCurveUploadRow } from '@/lib/noc/scurveUploadParser';
 
 type AreaFilter = 'global' | '1' | '2' | '3';
 
 // ─── Date helpers ────────────────────────────────────────────────────────────
-
-/** Build array of Date objects dari ISO 'YYYY-MM-DD' start → end (inclusive). */
-function getDatesBetweenISO(startIso: string, endIso: string): Date[] {
-  const result: Date[] = [];
-  const start = new Date(`${startIso}T00:00:00Z`);
-  const end = new Date(`${endIso}T00:00:00Z`);
-  const current = new Date(start);
-  while (current <= end) {
-    result.push(new Date(current));
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-  return result;
-}
-
-/** Format ISO date 'YYYY-MM-DD' → 'dd/MM' (untuk x-axis chart). */
-function formatShort(date: Date): string {
-  const d = String(date.getUTCDate()).padStart(2, '0');
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  return `${d}/${m}`;
-}
 
 /** Format ISO date 'YYYY-MM-DD' → 'dd/MM/yyyy'. */
 function formatLong(iso: string): string {
@@ -79,62 +64,15 @@ function formatLong(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
-/** Parse ISO 'YYYY-MM-DD' ke epoch ms (UTC midnight). */
-function parseIsoToMs(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  return Date.UTC(+m[1], +m[2] - 1, +m[3]);
-}
-
 // ─── Chart ───────────────────────────────────────────────────────────────────
 
 interface ChartProps {
-  targets: SCurveTarget[];
-  baseline: SCurveBaseline;
+  series: SCurveSeries;
   area: AreaFilter;
 }
 
-function SCurveChart({ targets, baseline, area }: ChartProps) {
-  const { labels, planned, actual, totalTarget } = useMemo(() => {
-    const filtered = area === 'global'
-      ? targets
-      : targets.filter((t) => t.area === Number(area));
-
-    const dates = getDatesBetweenISO(baseline.baseline_date, baseline.end_date);
-    const labels = dates.map(formatShort);
-
-    // "Hari ini" dalam zona WIB, di-snap ke UTC midnight agar sebanding
-    // dengan dateMs dari getDatesBetweenISO.
-    const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-    const todayMs = Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate());
-
-    const planned = dates.map((date) => {
-      const dateMs = date.getTime();
-      return filtered.filter((t) => {
-        const ms = parseIsoToMs(t.target_online);
-        return ms !== null && ms <= dateMs;
-      }).length;
-    });
-
-    const actual: (number | null)[] = dates.map((date) => {
-      const dateMs = date.getTime();
-      if (dateMs > todayMs) return null; // belum terjadi → putus garis
-      return filtered.filter((t) => {
-        if (!t.is_online) return false;
-        const ms = parseIsoToMs(t.actual_online);
-        return ms !== null && ms <= dateMs;
-      }).length;
-    });
-
-    return {
-      labels,
-      planned,
-      actual,
-      totalTarget: filtered.length,
-    };
-  }, [targets, baseline, area]);
-
+function SCurveChart({ series, area }: ChartProps) {
+  const { labels, planned, actual, totalTarget } = series;
   const areaLabel = area === 'global' ? 'Global' : `Area ${area}`;
 
   const pillLabelsPlugin = useMemo<Plugin<'line'>>(
@@ -382,79 +320,6 @@ function SCurveTable({ targets, area }: TableProps) {
   );
 }
 
-// ─── Fix Target Dialog ───────────────────────────────────────────────────────
-
-interface FixTargetDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  currentBaseline: SCurveBaseline | null;
-  onConfirm: () => void;
-  isPending: boolean;
-}
-
-function FixTargetDialog({
-  open, onOpenChange, currentBaseline, onConfirm, isPending,
-}: FixTargetDialogProps) {
-  const { data: openCount, isLoading } = useQuery({
-    queryKey: ['noc', 'tt_open_count'],
-    queryFn: getOpenTTCount,
-    enabled: open,
-    staleTime: 10_000,
-  });
-
-  return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Fix Target Baseline</AlertDialogTitle>
-          <AlertDialogDescription>
-            Akan snapshot{' '}
-            <strong>{isLoading ? '...' : `${openCount ?? 0} TT OPEN`}</strong>{' '}
-            saat ini sebagai baseline S-Curve periode 7 hari ke depan.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {currentBaseline && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Baseline hari ini akan diganti</AlertTitle>
-            <AlertDescription>
-              <div className="text-xs mt-2 space-y-0.5">
-                <div>Label: {currentBaseline.label}</div>
-                <div>
-                  Dibuat:{' '}
-                  {new Date(currentBaseline.created_at).toLocaleString('id-ID', {
-                    day: '2-digit', month: '2-digit', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit',
-                  })}
-                </div>
-                <div>Total target: {currentBaseline.total_target} TT</div>
-                <div className="mt-1 font-medium">
-                  Progress yang sudah tercatat akan hilang.
-                </div>
-              </div>
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>Batal</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => { e.preventDefault(); onConfirm(); }}
-            disabled={isPending || (openCount ?? 0) === 0}
-          >
-            {isPending
-              ? 'Memproses...'
-              : currentBaseline
-                ? 'Ya, Ganti Baseline'
-                : 'Ya, Fix Target'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-
 // ─── Reset Baseline Dialog ───────────────────────────────────────────────────
 
 interface ResetDialogProps {
@@ -507,7 +372,7 @@ export default function NOCSCurve() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [selectedArea, setSelectedArea] = useState<AreaFilter>('global');
-  const [showFixDialog, setShowFixDialog] = useState(false);
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   const baselineQuery = useQuery({
@@ -525,20 +390,26 @@ export default function NOCSCurve() {
 
   const targets = targetsQuery.data ?? [];
 
-  const fixTargetMut = useMutation({
-    mutationFn: fixTargetBaseline,
+  const uploadMut = useMutation({
+    mutationFn: ({
+      rows,
+      baselineDate,
+    }: {
+      rows: SCurveUploadRow[];
+      baselineDate: string;
+    }) => createBaselineFromUpload(rows, baselineDate),
     onSuccess: (result) => {
       toast({
         title: result.replaced ? 'Baseline diganti' : 'Baseline berhasil dibuat',
-        description: `${result.label} — ${result.totalTarget} TT di-snapshot.`,
+        description: `${result.label} — ${result.totalTarget} site di-snapshot.`,
       });
-      setShowFixDialog(false);
+      setShowUploadDialog(false);
       qc.invalidateQueries({ queryKey: ['noc', 's_curve_baseline'] });
       qc.invalidateQueries({ queryKey: ['noc', 's_curve_targets'] });
     },
     onError: (err: Error) => {
       toast({
-        title: 'Gagal Fix Target',
+        title: 'Gagal upload baseline',
         description: err.message,
         variant: 'destructive',
       });
@@ -576,6 +447,13 @@ export default function NOCSCurve() {
     };
   }, [targets]);
 
+  // Series cumulative/daily untuk chart + breakdown table.
+  // Hitung sekali di parent, share ke kedua komponen supaya tidak double-compute.
+  const series = useMemo(() => {
+    if (!baseline) return null;
+    return computeSCurveSeries(targets, baseline, selectedArea);
+  }, [targets, baseline, selectedArea]);
+
   return (
     <div className="space-y-4">
       {/* Header actions */}
@@ -600,11 +478,11 @@ export default function NOCSCurve() {
           <Button
             size="sm"
             className="gap-1.5"
-            onClick={() => setShowFixDialog(true)}
-            disabled={fixTargetMut.isPending}
+            onClick={() => setShowUploadDialog(true)}
+            disabled={uploadMut.isPending}
           >
-            <Pin className="h-3.5 w-3.5" />
-            Fix Target
+            <Upload className="h-3.5 w-3.5" />
+            Upload Baseline
           </Button>
         </div>
       </div>
@@ -637,8 +515,9 @@ export default function NOCSCurve() {
         <div className="bg-muted/30 border border-dashed border-border rounded-lg p-8 text-center">
           <p className="text-sm font-medium">Belum ada baseline aktif</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Klik <span className="font-medium">Fix Target</span> untuk memulai tracking S-Curve
-            minggu ini.
+            Klik <span className="font-medium">Upload Baseline</span> untuk
+            mulai tracking S-Curve minggu ini dengan list site dari file Excel
+            atau paste TSV.
           </p>
         </div>
       )}
@@ -659,22 +538,27 @@ export default function NOCSCurve() {
             <div className="bg-card border border-border rounded-lg p-8 text-center text-sm text-muted-foreground">
               Memuat targets...
             </div>
-          ) : (
+          ) : series ? (
             <>
-              <SCurveChart targets={targets} baseline={baseline} area={selectedArea} />
+              <SCurveChart series={series} area={selectedArea} />
+              <div className="bg-card border border-border rounded-lg p-3 overflow-x-auto">
+                <SCurveBreakdownTable series={series} />
+              </div>
               <SCurveTable targets={targets} area={selectedArea} />
             </>
-          )}
+          ) : null}
         </>
       )}
 
       {/* Dialogs */}
-      <FixTargetDialog
-        open={showFixDialog}
-        onOpenChange={setShowFixDialog}
+      <SCurveUploadDialog
+        open={showUploadDialog}
+        onOpenChange={setShowUploadDialog}
         currentBaseline={baseline}
-        onConfirm={() => fixTargetMut.mutate()}
-        isPending={fixTargetMut.isPending}
+        onConfirm={(rows, baselineDate) =>
+          uploadMut.mutate({ rows, baselineDate })
+        }
+        isPending={uploadMut.isPending}
       />
       <ResetBaselineDialog
         open={showResetDialog}
