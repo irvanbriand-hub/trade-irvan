@@ -73,80 +73,82 @@ interface ChartProps {
   area: AreaFilter;
 }
 
+// Plugin static — baca data langsung dari chart.data.datasets, tidak dari React
+// closure. Ini menghindari race condition saat React re-render vs Chart.js update,
+// dan menjamin label pill SELALU cocok dengan data yang sedang di-render.
+const pillLabelsPlugin: Plugin<'line'> = {
+  id: 'pillLabels',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const xScale = chart.scales.x;
+    const yScale = chart.scales.y;
+    if (!xScale || !yScale) return;
+
+    const plannedData = (chart.data.datasets[0]?.data ?? []) as Array<number | null>;
+    const actualData = (chart.data.datasets[1]?.data ?? []) as Array<number | null>;
+    const len = Math.max(plannedData.length, actualData.length);
+    if (len === 0) return;
+
+    function drawPill(x: number, y: number, text: string, bg: string) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      ctx.font = '500 11px -apple-system, system-ui, sans-serif';
+      const w = ctx.measureText(text).width + 10;
+      const h = 16;
+      const r = 8;
+
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.moveTo(x - w / 2 + r, y - h / 2);
+      ctx.arcTo(x + w / 2, y - h / 2, x + w / 2, y + h / 2, r);
+      ctx.arcTo(x + w / 2, y + h / 2, x - w / 2, y + h / 2, r);
+      ctx.arcTo(x - w / 2, y + h / 2, x - w / 2, y - h / 2, r);
+      ctx.arcTo(x - w / 2, y - h / 2, x + w / 2, y - h / 2, r);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
+    }
+
+    for (let idx = 0; idx < len; idx++) {
+      const pv = plannedData[idx];
+      const av = actualData[idx];
+      if (pv == null && av == null) continue;
+
+      const x = xScale.getPixelForValue(idx);
+      const py = pv != null ? yScale.getPixelForValue(pv) : null;
+      const ay = av != null ? yScale.getPixelForValue(av) : null;
+
+      if (py != null && ay == null) {
+        drawPill(x, py - 16, String(pv), '#e57373');
+        continue;
+      }
+      if (py == null && ay != null) {
+        drawPill(x, ay - 16, String(av), '#66bb6a');
+        continue;
+      }
+
+      if (py != null && ay != null && pv != null && av != null) {
+        if (pv === av) {
+          drawPill(x, py - 16, String(pv), '#e57373');
+          drawPill(x, ay + 16, String(av), '#66bb6a');
+        } else if (av > pv) {
+          drawPill(x, ay - 16, String(av), '#66bb6a');
+          drawPill(x, py + 16, String(pv), '#e57373');
+        } else {
+          drawPill(x, py - 16, String(pv), '#e57373');
+          drawPill(x, ay + 16, String(av), '#66bb6a');
+        }
+      }
+    }
+  },
+};
+
 function SCurveChart({ series, area }: ChartProps) {
   const { labels, planned, actual, totalTarget } = series;
   const areaLabel = area === 'global' ? 'Global' : `Area ${area}`;
-
-  const pillLabelsPlugin = useMemo<Plugin<'line'>>(
-    () => ({
-      id: 'pillLabels',
-      afterDatasetsDraw(chart) {
-        const { ctx } = chart;
-        const xScale = chart.scales.x;
-        const yScale = chart.scales.y;
-        if (!xScale || !yScale) return;
-
-        function drawPill(x: number, y: number, text: string, bg: string) {
-          ctx.font = '500 11px -apple-system, system-ui, sans-serif';
-          const w = ctx.measureText(text).width + 10;
-          const h = 16;
-          const r = 8;
-
-          ctx.fillStyle = bg;
-          ctx.beginPath();
-          ctx.moveTo(x - w / 2 + r, y - h / 2);
-          ctx.arcTo(x + w / 2, y - h / 2, x + w / 2, y + h / 2, r);
-          ctx.arcTo(x + w / 2, y + h / 2, x - w / 2, y + h / 2, r);
-          ctx.arcTo(x - w / 2, y + h / 2, x - w / 2, y - h / 2, r);
-          ctx.arcTo(x - w / 2, y - h / 2, x + w / 2, y - h / 2, r);
-          ctx.closePath();
-          ctx.fill();
-
-          ctx.fillStyle = '#fff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(text, x, y);
-        }
-
-        // Pakai scales.getPixelForValue langsung (bukan meta.data) supaya
-        // posisi label tidak terpengaruh animation tweening / bezier interpolation.
-        // Dengan cara ini, label SELALU di-render untuk tiap data point yang valid,
-        // termasuk di tanggal plateau (mis. PLAN ALL = 121 untuk 03/05, 04/05, 05/05).
-        for (let idx = 0; idx < labels.length; idx++) {
-          const pv = planned[idx];
-          const av = actual[idx];
-          if (pv == null && av == null) continue;
-
-          const x = xScale.getPixelForValue(idx);
-          const py = pv != null ? yScale.getPixelForValue(pv) : null;
-          const ay = av != null ? yScale.getPixelForValue(av) : null;
-
-          if (py != null && ay == null) {
-            drawPill(x, py - 16, String(pv), '#e57373');
-            continue;
-          }
-          if (py == null && ay != null) {
-            drawPill(x, ay - 16, String(av), '#66bb6a');
-            continue;
-          }
-
-          if (py != null && ay != null) {
-            if (pv === av) {
-              drawPill(x, py - 16, String(pv), '#e57373');
-              drawPill(x, ay + 16, String(av), '#66bb6a');
-            } else if ((av as number) > (pv as number)) {
-              drawPill(x, ay - 16, String(av), '#66bb6a');
-              drawPill(x, py + 16, String(pv), '#e57373');
-            } else {
-              drawPill(x, py - 16, String(pv), '#e57373');
-              drawPill(x, ay + 16, String(av), '#66bb6a');
-            }
-          }
-        }
-      },
-    }),
-    [labels, planned, actual],
-  );
 
   const chartData = {
     labels,
