@@ -11,7 +11,7 @@ import {
   type Plugin,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { Trash2, Upload } from 'lucide-react';
+import { Pencil, Trash2, Upload } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -43,6 +43,7 @@ import {
   getActiveBaseline,
   getTargetsByBaseline,
   resetActiveBaseline,
+  updateBaselineEndDate,
   type SCurveBaseline,
   type SCurveTarget,
 } from '@/lib/noc/scurveQueries';
@@ -80,8 +81,9 @@ function SCurveChart({ series, area }: ChartProps) {
       id: 'pillLabels',
       afterDatasetsDraw(chart) {
         const { ctx } = chart;
-        const plannedMeta = chart.getDatasetMeta(0);
-        const actualMeta = chart.getDatasetMeta(1);
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        if (!xScale || !yScale) return;
 
         function drawPill(x: number, y: number, text: string, bg: string) {
           ctx.font = '500 11px -apple-system, system-ui, sans-serif';
@@ -105,33 +107,38 @@ function SCurveChart({ series, area }: ChartProps) {
           ctx.fillText(text, x, y);
         }
 
+        // Pakai scales.getPixelForValue langsung (bukan meta.data) supaya
+        // posisi label tidak terpengaruh animation tweening / bezier interpolation.
+        // Dengan cara ini, label SELALU di-render untuk tiap data point yang valid,
+        // termasuk di tanggal plateau (mis. PLAN ALL = 121 untuk 03/05, 04/05, 05/05).
         for (let idx = 0; idx < labels.length; idx++) {
           const pv = planned[idx];
           const av = actual[idx];
-          const pp = plannedMeta.data[idx] as { x: number; y: number } | undefined;
-          const ap = actualMeta.data[idx] as { x: number; y: number } | undefined;
-
           if (pv == null && av == null) continue;
 
-          if (pv != null && av == null && pp) {
-            drawPill(pp.x, pp.y - 16, String(pv), '#e57373');
+          const x = xScale.getPixelForValue(idx);
+          const py = pv != null ? yScale.getPixelForValue(pv) : null;
+          const ay = av != null ? yScale.getPixelForValue(av) : null;
+
+          if (py != null && ay == null) {
+            drawPill(x, py - 16, String(pv), '#e57373');
             continue;
           }
-          if (pv == null && av != null && ap) {
-            drawPill(ap.x, ap.y - 16, String(av), '#66bb6a');
+          if (py == null && ay != null) {
+            drawPill(x, ay - 16, String(av), '#66bb6a');
             continue;
           }
 
-          if (pv != null && av != null && pp && ap) {
+          if (py != null && ay != null) {
             if (pv === av) {
-              drawPill(pp.x, pp.y - 16, String(pv), '#e57373');
-              drawPill(ap.x, ap.y + 16, String(av), '#66bb6a');
-            } else if (av > pv) {
-              drawPill(ap.x, ap.y - 16, String(av), '#66bb6a');
-              drawPill(pp.x, pp.y + 16, String(pv), '#e57373');
+              drawPill(x, py - 16, String(pv), '#e57373');
+              drawPill(x, ay + 16, String(av), '#66bb6a');
+            } else if ((av as number) > (pv as number)) {
+              drawPill(x, ay - 16, String(av), '#66bb6a');
+              drawPill(x, py + 16, String(pv), '#e57373');
             } else {
-              drawPill(pp.x, pp.y - 16, String(pv), '#e57373');
-              drawPill(ap.x, ap.y + 16, String(av), '#66bb6a');
+              drawPill(x, py - 16, String(pv), '#e57373');
+              drawPill(x, ay + 16, String(av), '#66bb6a');
             }
           }
         }
@@ -374,6 +381,8 @@ export default function NOCSCurve() {
   const [selectedArea, setSelectedArea] = useState<AreaFilter>('global');
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [showEditEndDialog, setShowEditEndDialog] = useState(false);
+  const [editEndDateValue, setEditEndDateValue] = useState('');
 
   const baselineQuery = useQuery({
     queryKey: ['noc', 's_curve_baseline'],
@@ -430,6 +439,23 @@ export default function NOCSCurve() {
     onError: (err: Error) => {
       toast({
         title: 'Gagal reset',
+        description: err.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const endDateMut = useMutation({
+    mutationFn: ({ id, endDate }: { id: string; endDate: string }) =>
+      updateBaselineEndDate(id, endDate),
+    onSuccess: () => {
+      toast({ title: 'End date diupdate' });
+      setShowEditEndDialog(false);
+      qc.invalidateQueries({ queryKey: ['noc', 's_curve_baseline'] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: 'Gagal update end date',
         description: err.message,
         variant: 'destructive',
       });
@@ -498,8 +524,20 @@ export default function NOCSCurve() {
             <div>
               <div className="text-xs text-muted-foreground">Baseline Aktif</div>
               <div className="text-lg font-bold mt-0.5">{baseline.label}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                Periode: {formatLong(baseline.baseline_date)} → {formatLong(baseline.end_date)}
+              <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
+                <span>Periode: {formatLong(baseline.baseline_date)} → {formatLong(baseline.end_date)}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditEndDateValue(baseline.end_date);
+                    setShowEditEndDialog(true);
+                  }}
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Edit end date"
+                  title="Edit end date"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
               </div>
             </div>
             <div className="text-right">
@@ -567,6 +605,43 @@ export default function NOCSCurve() {
         onConfirm={() => resetMut.mutate()}
         isPending={resetMut.isPending}
       />
+      <AlertDialog open={showEditEndDialog} onOpenChange={setShowEditEndDialog}>
+        <AlertDialogContent className="max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit End Date</AlertDialogTitle>
+            <AlertDialogDescription>
+              Extend atau shrink range chart S-Curve. Plan curve akan flat di
+              total untuk tanggal setelah max(target_online).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <label className="text-xs text-muted-foreground" htmlFor="edit-end-date">
+              Tanggal end
+            </label>
+            <input
+              id="edit-end-date"
+              type="date"
+              value={editEndDateValue}
+              min={baseline?.baseline_date}
+              onChange={(e) => setEditEndDateValue(e.target.value)}
+              className="w-full px-3 py-1.5 border border-input rounded-md text-sm bg-background"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={endDateMut.isPending}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (!baseline) return;
+                endDateMut.mutate({ id: baseline.id, endDate: editEndDateValue });
+              }}
+              disabled={endDateMut.isPending || !editEndDateValue}
+            >
+              {endDateMut.isPending ? 'Saving...' : 'Save'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

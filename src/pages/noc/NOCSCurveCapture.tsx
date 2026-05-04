@@ -138,8 +138,9 @@ export default function NOCSCurveCapture() {
       id: 'pillLabels',
       afterDatasetsDraw(chart) {
         const { ctx } = chart;
-        const plannedMeta = chart.getDatasetMeta(0);
-        const actualMeta = chart.getDatasetMeta(1);
+        const xScale = chart.scales.x;
+        const yScale = chart.scales.y;
+        if (!xScale || !yScale) return;
 
         function drawPill(x: number, y: number, text: string, bg: string) {
           ctx.font = '500 13px Arial, sans-serif';
@@ -163,33 +164,38 @@ export default function NOCSCurveCapture() {
           ctx.fillText(text, x, y);
         }
 
+        // Pakai scales.getPixelForValue langsung (bukan meta.data) supaya
+        // posisi label tidak terpengaruh animation tweening / bezier interpolation.
+        // Dengan cara ini, label SELALU di-render untuk tiap data point yang valid,
+        // termasuk di tanggal plateau (mis. PLAN ALL = 121 untuk 03/05, 04/05, 05/05).
         for (let idx = 0; idx < labels.length; idx++) {
           const pv = planned[idx];
           const av = actual[idx];
-          const pp = plannedMeta.data[idx] as { x: number; y: number } | undefined;
-          const ap = actualMeta.data[idx] as { x: number; y: number } | undefined;
-
           if (pv == null && av == null) continue;
 
-          if (pv != null && av == null && pp) {
-            drawPill(pp.x, pp.y - 20, String(pv), '#e57373');
+          const x = xScale.getPixelForValue(idx);
+          const py = pv != null ? yScale.getPixelForValue(pv) : null;
+          const ay = av != null ? yScale.getPixelForValue(av) : null;
+
+          if (py != null && ay == null) {
+            drawPill(x, py - 20, String(pv), '#e57373');
             continue;
           }
-          if (pv == null && av != null && ap) {
-            drawPill(ap.x, ap.y - 20, String(av), '#66bb6a');
+          if (py == null && ay != null) {
+            drawPill(x, ay - 20, String(av), '#66bb6a');
             continue;
           }
 
-          if (pv != null && av != null && pp && ap) {
+          if (py != null && ay != null) {
             if (pv === av) {
-              drawPill(pp.x, pp.y - 20, String(pv), '#e57373');
-              drawPill(ap.x, ap.y + 20, String(av), '#66bb6a');
-            } else if (av > pv) {
-              drawPill(ap.x, ap.y - 20, String(av), '#66bb6a');
-              drawPill(pp.x, pp.y + 20, String(pv), '#e57373');
+              drawPill(x, py - 20, String(pv), '#e57373');
+              drawPill(x, ay + 20, String(av), '#66bb6a');
+            } else if ((av as number) > (pv as number)) {
+              drawPill(x, ay - 20, String(av), '#66bb6a');
+              drawPill(x, py + 20, String(pv), '#e57373');
             } else {
-              drawPill(pp.x, pp.y - 20, String(pv), '#e57373');
-              drawPill(ap.x, ap.y + 20, String(av), '#66bb6a');
+              drawPill(x, py - 20, String(pv), '#e57373');
+              drawPill(x, ay + 20, String(av), '#66bb6a');
             }
           }
         }

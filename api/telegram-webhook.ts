@@ -1052,13 +1052,6 @@ async function processCommand(text: string, chatId: string) {
     }
 
     case '/scurve': {
-      const AREAS: Array<{ key: string; area: number | null }> = [
-        { key: 'global', area: null },
-        { key: '1', area: 1 },
-        { key: '2', area: 2 },
-        { key: '3', area: 3 },
-      ];
-
       if (arg === '1' || arg === '2' || arg === '3') {
         await sendTelegramMessage(chatId, `⏳ Generating S-Curve Area ${arg}...`);
         const captureUrl = `${APP_URL}/noc/scurve-capture?area=${arg}&baseline=active`;
@@ -1068,28 +1061,37 @@ async function processCommand(text: string, chatId: string) {
         });
         const summary = await generateSCurveSummary(parseInt(arg, 10));
         await sendTelegramMessage(chatId, summary);
-      } else if (arg === 'last') {
-        await sendTelegramMessage(chatId, '⏳ Generating S-Curve final report (4 charts)...');
-        for (const a of AREAS) {
-          const captureUrl = `${APP_URL}/noc/scurve-capture?area=${a.key}&baseline=last`;
-          await sendCaptureToTelegram(chatId, captureUrl, {
-            filename: `scurve-${a.key}-final.png`,
-            waitSelector: '#scurve-capture-ready',
-          });
-          const summary = await generateSCurveSummary(a.area, 'last');
-          await sendTelegramMessage(chatId, summary);
-        }
-      } else if (arg === '') {
-        await sendTelegramMessage(chatId, '⏳ Generating S-Curve report (4 charts)...');
-        for (const a of AREAS) {
-          const captureUrl = `${APP_URL}/noc/scurve-capture?area=${a.key}&baseline=active`;
-          await sendCaptureToTelegram(chatId, captureUrl, {
-            filename: `scurve-${a.key}.png`,
-            waitSelector: '#scurve-capture-ready',
-          });
-          const summary = await generateSCurveSummary(a.area);
-          await sendTelegramMessage(chatId, summary);
-        }
+      } else if (arg === 'last' || arg === '') {
+        const summaryMode: 'active' | 'last' = arg === 'last' ? 'last' : 'active';
+        const baselineKey = summaryMode;
+        const fileSuffix = arg === 'last' ? '-final' : '';
+
+        await sendTelegramMessage(
+          chatId,
+          arg === 'last'
+            ? '⏳ Generating S-Curve final report (2 images)...'
+            : '⏳ Generating S-Curve report (2 images)...',
+        );
+
+        // Image 1: Global single — chart besar + breakdown table harian
+        const url1 = `${APP_URL}/noc/scurve-capture?area=global&baseline=${baselineKey}`;
+        await sendCaptureToTelegram(chatId, url1, {
+          filename: `scurve-global${fileSuffix}.png`,
+          waitSelector: '#scurve-capture-ready',
+        });
+        const globalSummary = await generateSCurveSummary(null, summaryMode);
+        await sendTelegramMessage(chatId, globalSummary);
+
+        // Image 2: 2x2 grid — Global + Area 1 + Area 2 + Area 3 dalam satu gambar
+        const url2 = `${APP_URL}/noc/scurve-capture-grid?baseline=${baselineKey}`;
+        await sendCaptureToTelegram(chatId, url2, {
+          filename: `scurve-grid${fileSuffix}.png`,
+          waitSelector: '#scurve-capture-ready',
+        });
+        const summary1 = await generateSCurveSummary(1, summaryMode);
+        const summary2 = await generateSCurveSummary(2, summaryMode);
+        const summary3 = await generateSCurveSummary(3, summaryMode);
+        await sendTelegramMessage(chatId, `${summary1}\n\n${summary2}\n\n${summary3}`);
       } else {
         await sendTelegramMessage(
           chatId,

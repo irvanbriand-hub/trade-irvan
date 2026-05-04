@@ -452,6 +452,42 @@ export async function getOpenSiteIds(): Promise<string[]> {
 }
 
 /**
+ * Update end_date baseline. Dipakai user untuk extend chart range tanpa
+ * harus re-upload data (mis. data sampai 3 Mei tapi mau chart sampai 5 Mei
+ * → kurva PLAN flat di total, ACTUAL tetap stop di hari ini).
+ *
+ * Validasi: newEndDate harus >= baseline_date.
+ */
+export async function updateBaselineEndDate(
+  baselineId: string,
+  newEndDate: string,
+): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newEndDate)) {
+    throw new Error('Format tanggal harus YYYY-MM-DD');
+  }
+
+  const { data: baseline, error: fetchErr } = await db
+    .from('s_curve_baselines')
+    .select('baseline_date')
+    .eq('id', baselineId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const baselineDate = (baseline as { baseline_date: string }).baseline_date;
+  if (newEndDate < baselineDate) {
+    throw new Error(
+      `End date (${newEndDate}) tidak boleh sebelum baseline date (${baselineDate})`,
+    );
+  }
+
+  const { error: updErr } = await db
+    .from('s_curve_baselines')
+    .update({ end_date: newEndDate })
+    .eq('id', baselineId);
+  if (updErr) throw updErr;
+}
+
+/**
  * Hapus baseline aktif + semua targets-nya (cascade).
  * Return true kalau ada yang dihapus, false kalau tidak ada baseline aktif.
  */

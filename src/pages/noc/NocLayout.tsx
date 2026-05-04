@@ -25,6 +25,7 @@ import NocSettings from './NocSettings';
 import NOCCapturePage from './NOCCapturePage';
 import NOCSCurve from './NOCSCurve';
 import NOCSCurveCapture from './NOCSCurveCapture';
+import NOCSCurveCaptureGrid from './NOCSCurveCaptureGrid';
 import NOCRtgs from './NOCRtgs';
 import NOCRtgsCapture from './NOCRtgsCapture';
 
@@ -171,6 +172,7 @@ export default function NocLayout() {
       <Routes>
         <Route path="capture" element={<NOCCapturePage />} />
         <Route path="scurve-capture" element={<NOCSCurveCapture />} />
+        <Route path="scurve-capture-grid" element={<NOCSCurveCaptureGrid />} />
         <Route path="rtgs-capture" element={<NOCRtgsCapture />} />
         <Route path="*" element={<NocInner />} />
       </Routes>
