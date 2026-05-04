@@ -149,6 +149,22 @@ export async function createBaselineFromUpload(
 
   if (poError) throw poError;
 
+  // 2b. Master noc_perf_sites — fallback source untuk area kalau site tidak ada
+  // di tt_records OPEN (mis. site sudah online sebelum tracking) atau provinsi-nya
+  // empty/typo. Filter by site_id IN (...) supaya gak kena 1000-row PostgREST limit.
+  const uploadSiteIds = uploadRows.map((r) => r.site_id);
+  const { data: masterSites, error: masterErr } = await db
+    .from('noc_perf_sites')
+    .select('site_id, province')
+    .in('site_id', uploadSiteIds);
+  if (masterErr) throw masterErr;
+
+  const masterSiteMap = new Map<string, string>();
+  for (const s of (masterSites as Array<{ site_id: string; province: string | null }>) ?? []) {
+    const sid = (s.site_id ?? '').toUpperCase().trim();
+    if (sid) masterSiteMap.set(sid, s.province ?? '');
+  }
+
   // 3. Baseline date dari user, end_date = max target_online (atau baseline_date kalau lebih kecil)
   const baselineDate = baselineDateISO;
   const targetDates = uploadRows
@@ -228,6 +244,14 @@ export async function createBaselineFromUpload(
         existingTT.kabupaten ?? '',
         poListTyped,
       );
+      // Area dari tt_records.provinsi; fallback ke master kalau hasil 0 (provinsi
+      // empty/typo) tapi master punya provinsi yang valid.
+      const ttArea = getAreaFromProvinsi(existingTT.provinsi);
+      const masterProv = masterSiteMap.get(row.site_id);
+      const masterArea = getAreaFromProvinsi(masterProv);
+      const useMaster = ttArea === 0 && masterArea !== 0;
+      const finalProvinsi = useMaster ? (masterProv ?? null) : (existingTT.provinsi ?? null);
+      const finalArea = useMaster ? masterArea : ttArea;
       const baseFields = {
         baseline_id: baselineId,
         site_id: row.site_id,
@@ -235,9 +259,9 @@ export async function createBaselineFromUpload(
         site_name: existingTT.site_name ?? null,
         target_online: row.target_online,
         po_name: po?.name ?? 'Unknown',
-        provinsi: existingTT.provinsi ?? null,
+        provinsi: finalProvinsi,
         kabupaten: existingTT.kabupaten ?? null,
-        area: getAreaFromProvinsi(existingTT.provinsi),
+        area: finalArea,
       };
       if (userActual) {
         return {
@@ -256,7 +280,9 @@ export async function createBaselineFromUpload(
     }
 
     // Site tidak ada di tt_records OPEN.
+    // Fallback ke master noc_perf_sites untuk dapat provinsi → area.
     // site_name = null supaya UI fallback ke site_id, bukan menampilkan literal "Unknown".
+    const masterProv = masterSiteMap.get(row.site_id) ?? null;
     return {
       baseline_id: baselineId,
       site_id: row.site_id,
@@ -267,9 +293,9 @@ export async function createBaselineFromUpload(
       is_online: true,
       online_detected_at: nowIso,
       po_name: null,
-      provinsi: null,
+      provinsi: masterProv,
       kabupaten: null,
-      area: 0,
+      area: getAreaFromProvinsi(masterProv),
     };
   });
 
@@ -449,6 +475,81 @@ export async function getOpenSiteIds(): Promise<string[]> {
     if (sid) set.add(sid);
   }
   return Array.from(set);
+}
+
+/**
+ * Re-classify area dari semua target dengan area=0 di baseline tertentu.
+ * Lookup ke master `noc_perf_sites` untuk dapat province → derive area.
+ *
+ * Dipakai user untuk fix chart Area 1+2+3 yang totalnya gak match Global
+ * — biasanya karena ada site yang sudah online sebelum tracking
+ * (tidak ada di tt_records OPEN saat upload, jadi area=0 hardcoded).
+ *
+ * Return:
+ *   - updated: jumlah site yang dapat area baru (1/2/3)
+ *   - stillUnknown: jumlah site yang masih area=0 (tidak ditemukan di master atau province masih unknown)
+ */
+export async function reclassifyBaselineAreas(
+  baselineId: string,
+): Promise<{ updated: number; stillUnknown: number }> {
+  // 1. Fetch targets dengan area=0
+  const { data: zeros, error: zerosErr } = await db
+    .from('s_curve_targets')
+    .select('id, site_id')
+    .eq('baseline_id', baselineId)
+    .eq('area', 0);
+  if (zerosErr) throw zerosErr;
+
+  const zeroTargets = (zeros as Array<{ id: string; site_id: string }>) ?? [];
+  if (zeroTargets.length === 0) return { updated: 0, stillUnknown: 0 };
+
+  // 2. Lookup master_sites — filter by site_id IN supaya gak kena 1000-row limit
+  const ids = zeroTargets.map((t) => t.site_id);
+  const { data: masters, error: mastersErr } = await db
+    .from('noc_perf_sites')
+    .select('site_id, province')
+    .in('site_id', ids);
+  if (mastersErr) throw mastersErr;
+
+  const provMap = new Map<string, string>();
+  for (const m of (masters as Array<{ site_id: string; province: string | null }>) ?? []) {
+    const sid = (m.site_id ?? '').toUpperCase().trim();
+    if (sid) provMap.set(sid, m.province ?? '');
+  }
+
+  // 3. Build updates (cuma yang dapat area baru ≠ 0)
+  const updates = zeroTargets
+    .map((t) => {
+      const prov = provMap.get(t.site_id) ?? null;
+      return {
+        id: t.id,
+        provinsi: prov,
+        area: getAreaFromProvinsi(prov),
+      };
+    })
+    .filter((u) => u.area !== 0);
+
+  if (updates.length === 0) {
+    return { updated: 0, stillUnknown: zeroTargets.length };
+  }
+
+  // 4. Batch update parallel (pola sama dengan updateBaselineActuals)
+  await Promise.all(
+    updates.map((u) =>
+      db
+        .from('s_curve_targets')
+        .update({ area: u.area, provinsi: u.provinsi })
+        .eq('id', u.id)
+        .then(({ error }: { error: unknown }) => {
+          if (error) throw error;
+        }),
+    ),
+  );
+
+  return {
+    updated: updates.length,
+    stillUnknown: zeroTargets.length - updates.length,
+  };
 }
 
 /**

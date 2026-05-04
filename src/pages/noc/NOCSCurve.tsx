@@ -11,7 +11,7 @@ import {
   type Plugin,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { Pencil, Trash2, Upload } from 'lucide-react';
+import { MapPin, Pencil, Trash2, Upload } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -42,6 +42,7 @@ import {
   createBaselineFromUpload,
   getActiveBaseline,
   getTargetsByBaseline,
+  reclassifyBaselineAreas,
   resetActiveBaseline,
   updateBaselineEndDate,
   type SCurveBaseline,
@@ -462,6 +463,27 @@ export default function NOCSCurve() {
     },
   });
 
+  const reclassifyMut = useMutation({
+    mutationFn: (id: string) => reclassifyBaselineAreas(id),
+    onSuccess: ({ updated, stillUnknown }) => {
+      toast({
+        title: 'Reclassify area selesai',
+        description:
+          updated === 0 && stillUnknown === 0
+            ? 'Tidak ada site dengan area=0 — semua sudah ter-klasifikasi.'
+            : `${updated} site dapat area baru. ${stillUnknown} site masih unknown (tidak ada di master).`,
+      });
+      qc.invalidateQueries({ queryKey: ['noc', 's_curve_targets'] });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: 'Gagal reclassify area',
+        description: err.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   // Progress calc untuk header info
   const { onlineCount, totalTarget, percent } = useMemo(() => {
     const total = targets.length;
@@ -491,6 +513,17 @@ export default function NOCSCurve() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => baseline && reclassifyMut.mutate(baseline.id)}
+            disabled={!baseline || reclassifyMut.isPending}
+            title="Lookup master noc_perf_sites untuk site dengan area=0"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            {reclassifyMut.isPending ? 'Reclassifying...' : 'Reclassify Area'}
+          </Button>
           <Button
             variant="outline"
             size="sm"
