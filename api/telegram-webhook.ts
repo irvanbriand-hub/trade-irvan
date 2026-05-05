@@ -243,7 +243,7 @@ function getRtgsWIBLabel(): { date: string; time: string } {
   return { date: `${dd}/${mm}/${yyyy}`, time: `${hh}:${mi}` };
 }
 
-async function handleRtgsList(chatId: string) {
+async function handleRtgsList(chatId: string, minAging: number = 7) {
   await sendTelegramMessage(chatId, '⏳ Syncing data dari Google Sheet...');
   try {
     await syncFromGoogleSheet();
@@ -260,7 +260,7 @@ async function handleRtgsList(chatId: string) {
       'ticket_id, site_id, site_name, provinsi, down_time, detail_prob, target_online_original, target_online_edited, is_manually_edited',
     )
     .eq('status', 'OPEN')
-    .gte('down_time', 7)
+    .gte('down_time', minAging)
     .order('down_time', { ascending: false });
 
   if (ttsErr) {
@@ -275,7 +275,7 @@ async function handleRtgsList(chatId: string) {
   if (tickets.length === 0) {
     await sendTelegramMessage(
       chatId,
-      'Tidak ada TT dengan aging ≥ 7 hari.',
+      `Tidak ada TT dengan aging ≥ ${minAging} hari.`,
       { parseMode: null },
     );
     await supabaseAdmin
@@ -316,7 +316,7 @@ async function handleRtgsList(chatId: string) {
   });
 
   const header =
-    `📋 RTGS List — ${tickets.length} TT (umur ≥ 7 hari)\n` +
+    `📋 RTGS List — ${tickets.length} TT (umur ≥ ${minAging} hari)\n` +
     `update: ${dateLabel}, ${timeLabel}\n\n` +
     `Edit: /rtgs-edit-<field>-<N> <text>\n` +
     `Field: problem | action | kendala | target\n` +
@@ -1297,7 +1297,7 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 
 *📋 RTGS Mahaga*
 /rtgs — Laporan TT open: Internal (≥ 7 hari, full) + External (≥ 10 hari, ringkas)
-/rtgs-list — Daftar TT (≥ 7 hari) bernomor untuk edit
+/rtgs-list [n] — Daftar TT bernomor untuk edit (≥ n hari, default 7)
 /rtgs-edit-problem-N <text> — Edit Problem Hasil Analisa untuk #N
 /rtgs-edit-action-N <text> — Edit Action untuk #N
 /rtgs-edit-kendala-N <text> — Edit Kendala untuk #N
@@ -1326,9 +1326,22 @@ async function processCommand(text: string, chatId: string) {
 
   switch (command) {
 
-    case '/rtgs-list':
-      await handleRtgsList(chatId);
+    case '/rtgs-list': {
+      let minAging = 7;
+      if (arg) {
+        const n = parseInt(arg, 10);
+        if (isNaN(n) || n < 1) {
+          await sendTelegramMessage(
+            chatId,
+            '⚠️ Argumen tidak valid. Gunakan /rtgs-list, atau /rtgs-list <angka> (contoh: /rtgs-list 5)',
+          );
+          break;
+        }
+        minAging = n;
+      }
+      await handleRtgsList(chatId, minAging);
       break;
+    }
 
     case '/target': {
       const days = Math.min(parseInt(arg) || 0, 5);
