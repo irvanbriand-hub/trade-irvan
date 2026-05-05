@@ -74,6 +74,7 @@ interface EditableCellProps {
   onSave: (val: string) => void;
   onCancel: () => void;
   onReset: () => void;
+  tdClassName?: string;
 }
 
 function EditableCell({
@@ -84,6 +85,7 @@ function EditableCell({
   onSave,
   onCancel,
   onReset,
+  tdClassName,
 }: EditableCellProps) {
   const [editValue, setEditValue] = useState(value);
 
@@ -94,7 +96,7 @@ function EditableCell({
   if (isEditing) {
     return (
       <td
-        className="px-2 py-2 align-top"
+        className={cn('px-2 py-2 align-top', tdClassName)}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex gap-1">
@@ -135,7 +137,10 @@ function EditableCell({
 
   return (
     <td
-      className="px-2 py-2 cursor-pointer relative align-top group/cell"
+      className={cn(
+        'px-2 py-2 cursor-pointer relative align-top group/cell',
+        tdClassName,
+      )}
       onClick={onEditStart}
     >
       {isEdited && (
@@ -316,6 +321,17 @@ export default function NOCRtgs() {
   const externalCount = externalRecords.length;
   const previewCount = records.filter((r) => isPreviewRow(r)).length;
 
+  // Indeks first/last row dalam tabel yang masuk report External (down_time ≥ 10).
+  // Karena records disort by down_time DESC, blok external selalu kontigu di atas.
+  const firstExternalIdx = records.findIndex((r) => r.down_time >= 10);
+  let lastExternalIdx = -1;
+  for (let i = records.length - 1; i >= 0; i--) {
+    if (records[i].down_time >= 10) {
+      lastExternalIdx = i;
+      break;
+    }
+  }
+
   return (
     <div className="space-y-4 max-w-[1400px] mx-auto px-4">
       {/* Header */}
@@ -356,14 +372,29 @@ export default function NOCRtgs() {
       <div
         className="bg-amber-50 dark:bg-amber-950/20
                    border border-amber-200 dark:border-amber-900
-                   rounded-md p-3 text-xs"
+                   rounded-md p-3 text-xs space-y-1"
       >
-        💡 Klik kolom <strong>Problem Hasil Analisa</strong>,{' '}
-        <strong>Action</strong>, <strong>Kendala</strong>, atau{' '}
-        <strong>Plan Target Online</strong> untuk edit manual. Row dengan badge{' '}
-        <strong className="text-blue-500 dark:text-blue-400">Preview</strong>{' '}
-        (aging 5-6) belum masuk capture PNG, tapi annotation-nya akan muncul
-        saat aging naik ke 7+. Bisa di-prep dari sekarang.
+        <div>
+          💡 Klik kolom <strong>Problem Hasil Analisa</strong>,{' '}
+          <strong>Action</strong>, <strong>Kendala</strong>, atau{' '}
+          <strong>Plan Target Online</strong> untuk edit manual.
+        </div>
+        <div>
+          Row dengan badge{' '}
+          <strong className="text-blue-500 dark:text-blue-400">Preview</strong>{' '}
+          (aging 5-6) belum masuk capture PNG, tapi annotation-nya akan muncul
+          saat aging naik ke 7+.
+        </div>
+        <div>
+          Row di dalam{' '}
+          <strong className="text-emerald-600 dark:text-emerald-400">
+            border hijau
+          </strong>{' '}
+          (badge <strong className="text-emerald-600 dark:text-emerald-400">Ext</strong>,
+          aging ≥ 10) masuk report <strong>External</strong> — kolom Action,
+          Plan Target Online, dan Update Target Online disembunyikan di image
+          External-nya.
+        </div>
       </div>
 
       {/* Tabel */}
@@ -421,6 +452,35 @@ export default function NOCRtgs() {
                   editingCell.field === 'plan_target_online';
 
                 const isPreview = isPreviewRow(record);
+                const isExternal = record.down_time >= 10;
+                const isFirstExternal = idx === firstExternalIdx;
+                const isLastExternal = idx === lastExternalIdx;
+
+                // Border emerald untuk membungkus blok rows yang akan masuk
+                // report External (≥10 hari).
+                const borderTopExt = isFirstExternal
+                  ? 'border-t-[3px] border-t-emerald-500'
+                  : '';
+                const borderBottomExt = isLastExternal
+                  ? 'border-b-[3px] border-b-emerald-500'
+                  : '';
+                const borderLeftExt = isExternal
+                  ? 'border-l-[3px] border-l-emerald-500'
+                  : '';
+                const borderRightExt = isExternal
+                  ? 'border-r-[3px] border-r-emerald-500'
+                  : '';
+                const middleCellBorders = cn(borderTopExt, borderBottomExt);
+                const firstCellBorders = cn(
+                  borderTopExt,
+                  borderBottomExt,
+                  borderLeftExt,
+                );
+                const lastCellBorders = cn(
+                  borderTopExt,
+                  borderBottomExt,
+                  borderRightExt,
+                );
 
                 return (
                   <tr
@@ -428,9 +488,15 @@ export default function NOCRtgs() {
                     className={cn(
                       'border-t hover:bg-accent/30',
                       isPreview && 'bg-muted/30',
+                      isExternal && 'bg-emerald-500/[0.06]',
                     )}
                   >
-                    <td className="px-2 py-2 text-center align-top">
+                    <td
+                      className={cn(
+                        'px-2 py-2 text-center align-top',
+                        firstCellBorders,
+                      )}
+                    >
                       <div className="flex flex-col items-center gap-1">
                         <span>{idx + 1}</span>
                         {isPreview && (
@@ -444,16 +510,43 @@ export default function NOCRtgs() {
                             Preview
                           </span>
                         )}
+                        {isExternal && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded
+                                       bg-emerald-500/15 text-emerald-600
+                                       dark:text-emerald-400
+                                       font-medium whitespace-nowrap"
+                            title="Akan masuk report External (umur ≥ 10 hari)"
+                          >
+                            Ext
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td className="px-2 py-2 font-mono text-xs align-top">
+                    <td
+                      className={cn(
+                        'px-2 py-2 font-mono text-xs align-top',
+                        middleCellBorders,
+                      )}
+                    >
                       {record.site_id ?? '-'}
                     </td>
-                    <td className="px-2 py-2 align-top">{record.site_name}</td>
-                    <td className="px-2 py-2 align-top">
+                    <td
+                      className={cn('px-2 py-2 align-top', middleCellBorders)}
+                    >
+                      {record.site_name}
+                    </td>
+                    <td
+                      className={cn('px-2 py-2 align-top', middleCellBorders)}
+                    >
                       {record.provinsi ?? '-'}
                     </td>
-                    <td className="px-2 py-2 text-center font-semibold align-top">
+                    <td
+                      className={cn(
+                        'px-2 py-2 text-center font-semibold align-top',
+                        middleCellBorders,
+                      )}
+                    >
                       {record.down_time}
                     </td>
 
@@ -474,6 +567,7 @@ export default function NOCRtgs() {
                       onReset={() =>
                         handleReset(record.ticket_id, 'problem_analisa')
                       }
+                      tdClassName={middleCellBorders}
                     />
 
                     <EditableCell
@@ -489,6 +583,7 @@ export default function NOCRtgs() {
                       onSave={(v) => handleSave(record.ticket_id, 'action', v)}
                       onCancel={() => setEditingCell(null)}
                       onReset={() => handleReset(record.ticket_id, 'action')}
+                      tdClassName={middleCellBorders}
                     />
 
                     <EditableCell
@@ -504,6 +599,7 @@ export default function NOCRtgs() {
                       onSave={(v) => handleSave(record.ticket_id, 'kendala', v)}
                       onCancel={() => setEditingCell(null)}
                       onReset={() => handleReset(record.ticket_id, 'kendala')}
+                      tdClassName={middleCellBorders}
                     />
 
                     <EditableCell
@@ -523,13 +619,24 @@ export default function NOCRtgs() {
                       onReset={() =>
                         handleReset(record.ticket_id, 'plan_target_online')
                       }
+                      tdClassName={middleCellBorders}
                     />
 
-                    <td className="px-2 py-2 text-center align-top">
+                    <td
+                      className={cn(
+                        'px-2 py-2 text-center align-top',
+                        middleCellBorders,
+                      )}
+                    >
                       {formatTargetDateInline(pickTargetOnline(record))}
                     </td>
 
-                    <td className="px-2 py-2 align-top text-xs text-muted-foreground">
+                    <td
+                      className={cn(
+                        'px-2 py-2 align-top text-xs text-muted-foreground',
+                        lastCellBorders,
+                      )}
+                    >
                       {(() => {
                         const note = record.site_id
                           ? getSiteNote(record.site_id)?.note?.trim()
