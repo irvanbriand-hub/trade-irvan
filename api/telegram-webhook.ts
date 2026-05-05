@@ -12,11 +12,21 @@ const supabaseAdmin = createClient(
 
 // ─── Telegram helpers ─────────────────────────────────────────────────────────
 
-async function sendTelegramMessage(chatId: string, text: string) {
+async function sendTelegramMessage(
+  chatId: string,
+  text: string,
+  opts: { parseMode?: 'Markdown' | 'HTML' | null } = {},
+) {
+  // parseMode === null => plain text, tanpa parse_mode (aman untuk teks
+  // dari user yang mungkin punya '*' / '_' / '`').
+  const body: Record<string, any> = { chat_id: chatId, text };
+  if (opts.parseMode !== null) {
+    body.parse_mode = opts.parseMode ?? 'Markdown';
+  }
   await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -29,7 +39,11 @@ async function sendTelegramPhoto(chatId: string, photo: Buffer, filename: string
 
 const TELEGRAM_MAX_LENGTH = 3800;
 
-function splitIntoChunks(text: string, sectionPattern?: RegExp): string[] {
+function splitIntoChunks(
+  text: string,
+  sectionPattern?: RegExp,
+  opts: { plainPrefix?: boolean } = {},
+): string[] {
   if (text.length <= TELEGRAM_MAX_LENGTH) return [text];
 
   const chunks: string[] = [];
@@ -58,14 +72,22 @@ function splitIntoChunks(text: string, sectionPattern?: RegExp): string[] {
   if (currentChunk) chunks.push(currentChunk);
 
   if (chunks.length > 1) {
-    return chunks.map((chunk, i) => `📋 *Part ${i + 1}/${chunks.length}*\n\n${chunk}`);
+    return chunks.map((chunk, i) =>
+      opts.plainPrefix
+        ? `📋 Part ${i + 1}/${chunks.length}\n\n${chunk}`
+        : `📋 *Part ${i + 1}/${chunks.length}*\n\n${chunk}`,
+    );
   }
   return chunks;
 }
 
-async function sendTelegramChunks(chatId: string, chunks: string[]): Promise<void> {
+async function sendTelegramChunks(
+  chatId: string,
+  chunks: string[],
+  opts: { parseMode?: 'Markdown' | 'HTML' | null } = {},
+): Promise<void> {
   for (const chunk of chunks) {
-    await sendTelegramMessage(chatId, chunk);
+    await sendTelegramMessage(chatId, chunk, opts);
     await new Promise((r) => setTimeout(r, 300));
   }
 }
@@ -108,6 +130,327 @@ async function sendCaptureToTelegram(
   } finally {
     if (browser) await (browser as any).close();
   }
+}
+
+// ─── RTGS Annotation helpers (for /rtgs-list & /rtgs-edit-* commands) ─────────
+
+const RTGS_DEFAULT_ACTION = 'Kunjungan Teknisi';
+const RTGS_REPLACE_TARGET = 'BELUM ADA KONFIRMASI PIC';
+const RTGS_LINK_OFFLINE_PATTERNS = new Set([
+  'LINK TIDAK TERDETEKSI / OFFLINE',
+  'LINK TIDAK TERDETEKSI/OFFLINE',
+  'LINK TIDAK TERDETEKSI',
+]);
+
+type RtgsFieldAlias = 'problem' | 'action' | 'kendala' | 'target';
+const RTGS_FIELD_MAP: Record<
+  RtgsFieldAlias,
+  { col: string; flag: string; label: string }
+> = {
+  problem: {
+    col: 'problem_analisa',
+    flag: 'is_problem_edited',
+    label: 'Problem Hasil Analisa',
+  },
+  action: {
+    col: 'action',
+    flag: 'is_action_edited',
+    label: 'Action',
+  },
+  kendala: {
+    col: 'kendala',
+    flag: 'is_kendala_edited',
+    label: 'Kendala',
+  },
+  target: {
+    col: 'plan_target_online',
+    flag: 'is_plan_target_online_edited',
+    label: 'Plan Target Online',
+  },
+};
+
+interface RtgsTtRow {
+  ticket_id: string;
+  site_id: string | null;
+  site_name: string;
+  provinsi: string | null;
+  down_time: number;
+  detail_prob: string | null;
+  target_online_original: string | null;
+  target_online_edited: string | null;
+  is_manually_edited: boolean | null;
+}
+
+interface RtgsAnnRow {
+  ticket_id: string;
+  problem_analisa: string | null;
+  action: string | null;
+  kendala: string | null;
+  plan_target_online: string | null;
+  is_problem_edited: boolean | null;
+  is_action_edited: boolean | null;
+  is_kendala_edited: boolean | null;
+  is_plan_target_online_edited: boolean | null;
+}
+
+function rtgsEffectiveProblem(rec: RtgsTtRow, ann: RtgsAnnRow | null): string {
+  if (ann?.is_problem_edited && ann.problem_analisa) return ann.problem_analisa;
+  const dp = (rec.detail_prob ?? '').trim().toUpperCase();
+  if (RTGS_LINK_OFFLINE_PATTERNS.has(dp)) return RTGS_REPLACE_TARGET;
+  return rec.detail_prob || '-';
+}
+function rtgsEffectiveAction(ann: RtgsAnnRow | null): string {
+  if (ann?.is_action_edited && ann.action) return ann.action;
+  return RTGS_DEFAULT_ACTION;
+}
+function rtgsEffectiveKendala(ann: RtgsAnnRow | null): string {
+  if (ann?.is_kendala_edited && ann.kendala) return ann.kendala;
+  return '-';
+}
+function rtgsEffectivePlanTarget(ann: RtgsAnnRow | null): string {
+  if (ann?.is_plan_target_online_edited && ann.plan_target_online)
+    return ann.plan_target_online;
+  return '-';
+}
+function rtgsPickTargetOnline(rec: RtgsTtRow): string {
+  if (rec.is_manually_edited && rec.target_online_edited)
+    return rec.target_online_edited;
+  return rec.target_online_original || '';
+}
+
+function rtgsFormatDate(raw: string | null | undefined): string {
+  if (!raw) return '-';
+  const trimmed = raw.trim();
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  const dmy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (dmy) {
+    const d = dmy[1].padStart(2, '0');
+    const m = dmy[2].padStart(2, '0');
+    const y = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+    return `${d}/${m}/${y}`;
+  }
+  return trimmed;
+}
+
+function getRtgsWIBLabel(): { date: string; time: string } {
+  const d = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = d.getUTCFullYear();
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mi = String(d.getUTCMinutes()).padStart(2, '0');
+  return { date: `${dd}/${mm}/${yyyy}`, time: `${hh}:${mi}` };
+}
+
+async function handleRtgsList(chatId: string) {
+  await sendTelegramMessage(chatId, '⏳ Syncing data dari Google Sheet...');
+  try {
+    await syncFromGoogleSheet();
+  } catch (err: any) {
+    await sendTelegramMessage(
+      chatId,
+      `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`,
+    );
+  }
+
+  const { data: ttsRaw, error: ttsErr } = await supabaseAdmin
+    .from('tt_records')
+    .select(
+      'ticket_id, site_id, site_name, provinsi, down_time, detail_prob, target_online_original, target_online_edited, is_manually_edited',
+    )
+    .eq('status', 'OPEN')
+    .gte('down_time', 7)
+    .order('down_time', { ascending: false });
+
+  if (ttsErr) {
+    await sendTelegramMessage(chatId, `❌ Gagal load TT: ${ttsErr.message}`, {
+      parseMode: null,
+    });
+    return;
+  }
+
+  const tickets = (ttsRaw ?? []) as RtgsTtRow[];
+
+  if (tickets.length === 0) {
+    await sendTelegramMessage(
+      chatId,
+      'Tidak ada TT dengan aging ≥ 7 hari.',
+      { parseMode: null },
+    );
+    await supabaseAdmin
+      .from('telegram_rtgs_list_snapshot')
+      .delete()
+      .eq('chat_id', chatId);
+    return;
+  }
+
+  const { data: annsRaw, error: annErr } = await supabaseAdmin
+    .from('rtgs_annotations')
+    .select('*');
+  if (annErr) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Gagal load annotations: ${annErr.message}`,
+      { parseMode: null },
+    );
+    return;
+  }
+  const annMap = new Map<string, RtgsAnnRow>();
+  for (const a of (annsRaw ?? []) as RtgsAnnRow[]) annMap.set(a.ticket_id, a);
+
+  const { date: dateLabel, time: timeLabel } = getRtgsWIBLabel();
+
+  const items = tickets.map((t, i) => {
+    const ann = annMap.get(t.ticket_id) ?? null;
+    return [
+      `${i + 1}. ${t.site_name} — ${t.down_time} hari`,
+      `   Site   : ${t.site_id ?? '-'}`,
+      `   Prov   : ${t.provinsi ?? '-'}`,
+      `   Problem: ${rtgsEffectiveProblem(t, ann)}`,
+      `   Action : ${rtgsEffectiveAction(ann)}`,
+      `   Kendala: ${rtgsEffectiveKendala(ann)}`,
+      `   PlanTO : ${rtgsFormatDate(rtgsEffectivePlanTarget(ann))}`,
+      `   UpdTO  : ${rtgsFormatDate(rtgsPickTargetOnline(t))}`,
+    ].join('\n');
+  });
+
+  const header =
+    `📋 RTGS List — ${tickets.length} TT (umur ≥ 7 hari)\n` +
+    `update: ${dateLabel}, ${timeLabel}\n\n` +
+    `Edit: /rtgs-edit-<field>-<N> <text>\n` +
+    `Field: problem | action | kendala | target\n` +
+    `Contoh: /rtgs-edit-kendala-2 Sudah dikunjungi tapi tidak ada PIC`;
+
+  const fullText = header + '\n\n' + items.join('\n\n');
+  const chunks = splitIntoChunks(fullText, /\n\n(?=\d+\.\s)/, {
+    plainPrefix: true,
+  });
+  await sendTelegramChunks(chatId, chunks, { parseMode: null });
+
+  // Persist snapshot — overwrite latest list per chat_id
+  const snapshot = tickets.map((t, i) => ({
+    idx: i + 1,
+    ticket_id: t.ticket_id,
+    site_id: t.site_id,
+    site_name: t.site_name,
+    down_time: t.down_time,
+  }));
+  const { error: snapUpErr } = await supabaseAdmin
+    .from('telegram_rtgs_list_snapshot')
+    .upsert(
+      {
+        chat_id: chatId,
+        tickets: snapshot,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'chat_id' },
+    );
+  if (snapUpErr) {
+    console.error('[rtgs-list] snapshot upsert error:', snapUpErr);
+  }
+}
+
+async function handleRtgsEdit(
+  chatId: string,
+  fieldAlias: RtgsFieldAlias,
+  idx: number,
+  value: string,
+) {
+  const fieldInfo = RTGS_FIELD_MAP[fieldAlias];
+  if (!value) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Value kosong. Format: /rtgs-edit-${fieldAlias}-${idx} <text>`,
+      { parseMode: null },
+    );
+    return;
+  }
+
+  const { data: snap, error: snapErr } = await supabaseAdmin
+    .from('telegram_rtgs_list_snapshot')
+    .select('tickets')
+    .eq('chat_id', chatId)
+    .maybeSingle();
+  if (snapErr) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Gagal load snapshot: ${snapErr.message}`,
+      { parseMode: null },
+    );
+    return;
+  }
+  if (!snap) {
+    await sendTelegramMessage(
+      chatId,
+      '❌ Belum ada list di chat ini. Jalankan /rtgs-list dulu.',
+      { parseMode: null },
+    );
+    return;
+  }
+
+  const tickets = ((snap.tickets ?? []) as Array<{
+    idx: number;
+    ticket_id: string;
+    site_id: string | null;
+    site_name: string;
+    down_time: number;
+  }>);
+  const item = tickets.find((t) => t.idx === idx);
+  if (!item) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Nomor #${idx} tidak ada di list. Range: 1..${tickets.length}.`,
+      { parseMode: null },
+    );
+    return;
+  }
+
+  // Fetch existing annotation untuk preserve field-field lain.
+  const { data: existing, error: fetchErr } = await supabaseAdmin
+    .from('rtgs_annotations')
+    .select('*')
+    .eq('ticket_id', item.ticket_id)
+    .maybeSingle();
+  if (fetchErr) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ Gagal load annotation: ${fetchErr.message}`,
+      { parseMode: null },
+    );
+    return;
+  }
+
+  const updateData: Record<string, any> = {
+    ticket_id: item.ticket_id,
+    [fieldInfo.col]: value,
+    [fieldInfo.flag]: true,
+  };
+  if (existing) {
+    for (const otherKey of Object.keys(RTGS_FIELD_MAP) as RtgsFieldAlias[]) {
+      if (otherKey === fieldAlias) continue;
+      const oi = RTGS_FIELD_MAP[otherKey];
+      updateData[oi.col] = (existing as any)[oi.col];
+      updateData[oi.flag] = (existing as any)[oi.flag];
+    }
+  }
+
+  const { error: upErr } = await supabaseAdmin
+    .from('rtgs_annotations')
+    .upsert(updateData, { onConflict: 'ticket_id' });
+  if (upErr) {
+    await sendTelegramMessage(chatId, `❌ Gagal simpan: ${upErr.message}`, {
+      parseMode: null,
+    });
+    return;
+  }
+
+  await sendTelegramMessage(
+    chatId,
+    `✅ #${idx} ${item.site_name} (${item.site_id ?? '-'})\n` +
+      `${fieldInfo.label} diupdate:\n${value}`,
+    { parseMode: null },
+  );
 }
 
 // ─── WIB timezone helpers ─────────────────────────────────────────────────────
@@ -954,6 +1297,11 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 
 *📋 RTGS Mahaga*
 /rtgs — Laporan TT open: Internal (≥ 7 hari, full) + External (≥ 10 hari, ringkas)
+/rtgs-list — Daftar TT (≥ 7 hari) bernomor untuk edit
+/rtgs-edit-problem-N <text> — Edit Problem Hasil Analisa untuk #N
+/rtgs-edit-action-N <text> — Edit Action untuk #N
+/rtgs-edit-kendala-N <text> — Edit Kendala untuk #N
+/rtgs-edit-target-N <text> — Edit Plan Target Online untuk #N
 
 /help — Tampilkan daftar ini`;
 
@@ -962,7 +1310,25 @@ async function processCommand(text: string, chatId: string) {
   const command = parts[0].toLowerCase();
   const arg = (parts[1] ?? '').toLowerCase();
 
+  // Dynamic command: /rtgs-edit-<field>-<idx> <body text>
+  // Body teks bisa multi-word atau multiline (ditulis setelah command).
+  const editMatch = command.match(
+    /^\/rtgs-edit-(problem|action|kendala|target)-(\d+)$/,
+  );
+  if (editMatch) {
+    const fieldAlias = editMatch[1] as RtgsFieldAlias;
+    const idx = parseInt(editMatch[2], 10);
+    const valueStart = text.indexOf(parts[0]) + parts[0].length;
+    const value = text.slice(valueStart).trim();
+    await handleRtgsEdit(chatId, fieldAlias, idx, value);
+    return;
+  }
+
   switch (command) {
+
+    case '/rtgs-list':
+      await handleRtgsList(chatId);
+      break;
 
     case '/target': {
       const days = Math.min(parseInt(arg) || 0, 5);
