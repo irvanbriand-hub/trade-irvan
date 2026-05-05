@@ -386,6 +386,13 @@ export default function NOCRtgs() {
           saat aging naik ke 7+.
         </div>
         <div>
+          Row tint{' '}
+          <strong className="text-orange-600 dark:text-orange-400">orange</strong>{' '}
+          (badge <strong className="text-orange-600 dark:text-orange-400">H-1 Ext</strong>,
+          aging 9) belum masuk External, tapi <strong>besok</strong> akan naik
+          ke aging ≥ 10 → siap-siap di-prep.
+        </div>
+        <div>
           Row di dalam{' '}
           <strong className="text-emerald-600 dark:text-emerald-400">
             border hijau
@@ -453,6 +460,7 @@ export default function NOCRtgs() {
 
                 const isPreview = isPreviewRow(record);
                 const isExternal = record.down_time >= 10;
+                const isWillBeExternal = record.down_time === 9;
                 const isFirstExternal = idx === firstExternalIdx;
                 const isLastExternal = idx === lastExternalIdx;
 
@@ -488,6 +496,7 @@ export default function NOCRtgs() {
                     className={cn(
                       'border-t hover:bg-accent/30',
                       isPreview && 'bg-muted/30',
+                      isWillBeExternal && 'bg-orange-500/[0.1]',
                       isExternal && 'bg-emerald-500/[0.06]',
                     )}
                   >
@@ -508,6 +517,17 @@ export default function NOCRtgs() {
                             title="Akan masuk capture saat aging ≥ 7"
                           >
                             Preview
+                          </span>
+                        )}
+                        {isWillBeExternal && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded
+                                       bg-orange-500/20 text-orange-600
+                                       dark:text-orange-400
+                                       font-semibold whitespace-nowrap"
+                            title="Besok aging naik ke ≥ 10 → masuk report External"
+                          >
+                            H-1 Ext
                           </span>
                         )}
                         {isExternal && (
