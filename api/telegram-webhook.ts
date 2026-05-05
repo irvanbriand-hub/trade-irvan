@@ -953,7 +953,7 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 /scurve last — Final report baseline terakhir (Selasa malam)
 
 *📋 RTGS Mahaga*
-/rtgs — Laporan TT open ≥ 7 hari (dengan analisa manual)
+/rtgs — Laporan TT open: Internal (≥ 7 hari, full) + External (≥ 10 hari, ringkas)
 
 /help — Tampilkan daftar ini`;
 
@@ -1111,7 +1111,10 @@ async function processCommand(text: string, chatId: string) {
           `⚠️ Sync gagal: ${err.message}. Melanjutkan dengan data lama...`,
         );
       }
-      await sendTelegramMessage(chatId, '📸 Generating RTGS Mahaga report...');
+      await sendTelegramMessage(
+        chatId,
+        '📸 Generating RTGS Mahaga report (2 images)...',
+      );
 
       const wib = getWIBParts(0);
       const yyyy = wib.year;
@@ -1120,12 +1123,23 @@ async function processCommand(text: string, chatId: string) {
       const now = new Date(Date.now() + 7 * 60 * 60 * 1000);
       const hh = String(now.getUTCHours()).padStart(2, '0');
       const mi = String(now.getUTCMinutes()).padStart(2, '0');
+      const stamp = `${yyyy}-${mm}-${dd}-${hh}${mi}`;
 
-      const captureUrl = `${APP_URL}/noc/rtgs-capture`;
-      await sendCaptureToTelegram(chatId, captureUrl, {
-        filename: `rtgs-mahaga-${yyyy}-${mm}-${dd}-${hh}${mi}.png`,
+      // Image 1: Internal — semua kolom, umur ≥ 7 hari
+      await sendCaptureToTelegram(chatId, `${APP_URL}/noc/rtgs-capture`, {
+        filename: `rtgs-mahaga-internal-${stamp}.png`,
         waitSelector: '#rtgs-capture-ready',
       });
+
+      // Image 2: External — 7 kolom (Action / Plan Target Online / Update Target Online disembunyikan), umur ≥ 10 hari
+      await sendCaptureToTelegram(
+        chatId,
+        `${APP_URL}/noc/rtgs-capture?variant=external`,
+        {
+          filename: `rtgs-mahaga-external-${stamp}.png`,
+          waitSelector: '#rtgs-capture-ready',
+        },
+      );
       break;
     }
 

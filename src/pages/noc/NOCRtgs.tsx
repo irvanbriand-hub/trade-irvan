@@ -185,7 +185,8 @@ export default function NOCRtgs() {
     field: RTGSField;
   } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
-  const captureRef = useRef<HTMLDivElement>(null);
+  const captureInternalRef = useRef<HTMLDivElement>(null);
+  const captureExternalRef = useRef<HTMLDivElement>(null);
 
   async function loadData() {
     setLoading(true);
@@ -238,11 +239,10 @@ export default function NOCRtgs() {
     }
   }
 
-  async function handleCapture() {
-    const el = captureRef.current;
-    if (!el) return;
-
-    setIsCapturing(true);
+  async function captureElementToPng(
+    el: HTMLDivElement,
+    filename: string,
+  ): Promise<void> {
     el.style.left = '0';
     el.style.position = 'fixed';
     el.style.zIndex = '-1';
@@ -260,18 +260,41 @@ export default function NOCRtgs() {
         imageTimeout: 0,
       });
 
-      const d = getWIBNow();
-      const dd = String(d.getUTCDate()).padStart(2, '0');
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const yyyy = d.getUTCFullYear();
-      const hh = String(d.getUTCHours()).padStart(2, '0');
-      const mi = String(d.getUTCMinutes()).padStart(2, '0');
-
-      const filename = `rtgs-mahaga-${yyyy}-${mm}-${dd}-${hh}${mi}.png`;
       const link = document.createElement('a');
       link.download = filename;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
+    } finally {
+      el.style.left = '-9999px';
+      el.style.position = 'absolute';
+      el.style.zIndex = 'auto';
+    }
+  }
+
+  async function handleCapture() {
+    const internalEl = captureInternalRef.current;
+    const externalEl = captureExternalRef.current;
+    if (!internalEl || !externalEl) return;
+
+    setIsCapturing(true);
+
+    const d = getWIBNow();
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = d.getUTCFullYear();
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mi = String(d.getUTCMinutes()).padStart(2, '0');
+    const stamp = `${yyyy}-${mm}-${dd}-${hh}${mi}`;
+
+    try {
+      await captureElementToPng(
+        internalEl,
+        `rtgs-mahaga-internal-${stamp}.png`,
+      );
+      await captureElementToPng(
+        externalEl,
+        `rtgs-mahaga-external-${stamp}.png`,
+      );
     } catch (err) {
       toast({
         title: 'Gagal capture',
@@ -279,9 +302,6 @@ export default function NOCRtgs() {
         variant: 'destructive',
       });
     } finally {
-      el.style.left = '-9999px';
-      el.style.position = 'absolute';
-      el.style.zIndex = 'auto';
       setIsCapturing(false);
     }
   }
@@ -290,7 +310,10 @@ export default function NOCRtgs() {
   const timeLabel = formatWIBTime();
 
   const isPreviewRow = (r: TTRecordDB) => r.down_time < 7;
-  const captureCount = records.filter((r) => !isPreviewRow(r)).length;
+  const internalRecords = records.filter((r) => r.down_time >= 7);
+  const externalRecords = records.filter((r) => r.down_time >= 10);
+  const captureCount = internalRecords.length;
+  const externalCount = externalRecords.length;
   const previewCount = records.filter((r) => isPreviewRow(r)).length;
 
   return (
@@ -306,8 +329,12 @@ export default function NOCRtgs() {
         <div className="flex gap-2 items-center">
           <div className="text-xs text-muted-foreground mr-2 flex gap-3">
             <span>
-              Akan capture:{' '}
+              Internal:{' '}
               <strong className="text-foreground">{captureCount} TT</strong>
+            </span>
+            <span>
+              External:{' '}
+              <strong className="text-foreground">{externalCount} TT</strong>
             </span>
             <span className="text-blue-500 dark:text-blue-400">
               Preview: <strong>{previewCount} TT</strong>
@@ -320,7 +347,7 @@ export default function NOCRtgs() {
             disabled={isCapturing || captureCount === 0}
           >
             <Camera className="h-3.5 w-3.5" />
-            {isCapturing ? 'Capturing...' : 'Capture PNG'}
+            {isCapturing ? 'Capturing...' : 'Capture PNG (2 file)'}
           </Button>
         </div>
       </div>
@@ -520,9 +547,9 @@ export default function NOCRtgs() {
         </div>
       )}
 
-      {/* Hidden capture target — di-pop dari layar saat handleCapture dijalankan */}
+      {/* Hidden capture targets — di-pop dari layar saat handleCapture dijalankan */}
       <div
-        ref={captureRef}
+        ref={captureInternalRef}
         style={{
           position: 'absolute',
           left: '-9999px',
@@ -531,10 +558,28 @@ export default function NOCRtgs() {
         }}
       >
         <RTGSCaptureView
-          records={records.filter((r) => r.down_time >= 7)}
+          records={internalRecords}
           annotations={annotations}
           dateLabel={dateLabel}
           timeLabel={timeLabel}
+          variant="internal"
+        />
+      </div>
+      <div
+        ref={captureExternalRef}
+        style={{
+          position: 'absolute',
+          left: '-9999px',
+          top: 0,
+          backgroundColor: '#ffffff',
+        }}
+      >
+        <RTGSCaptureView
+          records={externalRecords}
+          annotations={annotations}
+          dateLabel={dateLabel}
+          timeLabel={timeLabel}
+          variant="external"
         />
       </div>
     </div>

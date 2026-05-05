@@ -8,12 +8,21 @@ import {
 } from '@/lib/noc/rtgsQueries';
 import type { TTRecordDB } from '@/lib/noc/types';
 
+export type RTGSCaptureVariant = 'internal' | 'external';
+
 interface RTGSCaptureViewProps {
   records: TTRecordDB[];
   annotations: RTGSAnnotation[];
   /** Tanggal & jam yang di-render di header (WIB). */
   dateLabel: string; // 'DD/MM/YYYY'
   timeLabel: string; // 'HH:mm'
+  /**
+   * Varian tampilan:
+   * - 'internal' (default): semua kolom tampil, header "umur 7 hari atau lebih".
+   * - 'external': kolom Action, Plan Target Online, Update Target Online disembunyikan,
+   *   header "umur 10 hari atau lebih". Records tetap di-filter di parent.
+   */
+  variant?: RTGSCaptureVariant;
 }
 
 // ─── Date format helper ──────────────────────────────────────────────────────
@@ -75,10 +84,14 @@ export function RTGSCaptureView({
   annotations,
   dateLabel,
   timeLabel,
+  variant = 'internal',
 }: RTGSCaptureViewProps) {
   const annotationByTicket = new Map(
     annotations.map((a) => [a.ticket_id, a]),
   );
+
+  const isExternal = variant === 'external';
+  const ageThreshold = isExternal ? 10 : 7;
 
   return (
     <div
@@ -102,14 +115,14 @@ export function RTGSCaptureView({
           borderBottom: 'none',
         }}
       >
-        Tiket RTGS Mahaga yang umur nya 7 hari atau lebih, update : tgl{' '}
-        {dateLabel}, Jam {timeLabel}
+        Tiket RTGS Mahaga yang umur nya {ageThreshold} hari atau lebih, update :
+        tgl {dateLabel}, Jam {timeLabel}
       </div>
 
       {/* Tabel */}
       {records.length === 0 ? (
         <div style={{ padding: '32px', textAlign: 'center', fontSize: '13px' }}>
-          Tidak ada TT dengan aging ≥ 7 hari.
+          Tidak ada TT dengan aging ≥ {ageThreshold} hari.
         </div>
       ) : (
         <table
@@ -129,10 +142,10 @@ export function RTGSCaptureView({
             <col style={{ width: '160px' }} />  {/* Provinsi */}
             <col style={{ width: '90px' }} />   {/* Umur Tiket */}
             <col style={{ width: 'auto' }} />   {/* Problem Analisa */}
-            <col style={{ width: 'auto' }} />   {/* Action */}
+            {!isExternal && <col style={{ width: 'auto' }} />}   {/* Action */}
             <col style={{ width: 'auto' }} />   {/* Kendala */}
-            <col style={{ width: '100px' }} />  {/* Plan Target Online */}
-            <col style={{ width: '100px' }} />  {/* Update Target Online */}
+            {!isExternal && <col style={{ width: '100px' }} />}  {/* Plan Target Online */}
+            {!isExternal && <col style={{ width: '100px' }} />}  {/* Update Target Online */}
           </colgroup>
           <thead>
             <tr>
@@ -142,10 +155,10 @@ export function RTGSCaptureView({
               <th style={thStyle}>Provinsi</th>
               <th style={thStyle}>Umur Tiket (hari)</th>
               <th style={thStyle}>Problem Hasil Analisa</th>
-              <th style={thStyle}>Action</th>
+              {!isExternal && <th style={thStyle}>Action</th>}
               <th style={thStyle}>Kendala</th>
-              <th style={thStyle}>Plan Target Online</th>
-              <th style={thStyle}>Update Target Online</th>
+              {!isExternal && <th style={thStyle}>Plan Target Online</th>}
+              {!isExternal && <th style={thStyle}>Update Target Online</th>}
             </tr>
           </thead>
           <tbody>
@@ -176,14 +189,20 @@ export function RTGSCaptureView({
                     {record.down_time}
                   </td>
                   <td style={tdBase}>{problem}</td>
-                  <td style={tdBase}>{action}</td>
+                  {!isExternal && <td style={tdBase}>{action}</td>}
                   <td style={tdBase}>{getEffectiveKendala(annotation)}</td>
-                  <td style={{ ...tdBase, textAlign: 'center' }}>
-                    {formatTargetDate(getEffectivePlanTargetOnline(annotation))}
-                  </td>
-                  <td style={{ ...tdBase, textAlign: 'center' }}>
-                    {formatTargetDate(pickTargetOnline(record))}
-                  </td>
+                  {!isExternal && (
+                    <td style={{ ...tdBase, textAlign: 'center' }}>
+                      {formatTargetDate(
+                        getEffectivePlanTargetOnline(annotation),
+                      )}
+                    </td>
+                  )}
+                  {!isExternal && (
+                    <td style={{ ...tdBase, textAlign: 'center' }}>
+                      {formatTargetDate(pickTargetOnline(record))}
+                    </td>
+                  )}
                 </tr>
               );
             })}

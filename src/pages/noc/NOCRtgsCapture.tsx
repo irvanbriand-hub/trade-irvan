@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   getRTGSAnnotations,
   getRTGSTickets,
   type RTGSAnnotation,
 } from '@/lib/noc/rtgsQueries';
 import type { TTRecordDB } from '@/lib/noc/types';
-import { RTGSCaptureView } from '@/components/noc/RTGSCaptureView';
+import {
+  RTGSCaptureView,
+  type RTGSCaptureVariant,
+} from '@/components/noc/RTGSCaptureView';
 
 // ─── Date helpers (WIB) ──────────────────────────────────────────────────────
 
@@ -31,6 +35,11 @@ function formatWIBTime(): string {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function NOCRtgsCapture() {
+  const [searchParams] = useSearchParams();
+  const variant: RTGSCaptureVariant =
+    searchParams.get('variant') === 'external' ? 'external' : 'internal';
+  const minAging = variant === 'external' ? 10 : 7;
+
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [records, setRecords] = useState<TTRecordDB[]>([]);
@@ -42,7 +51,7 @@ export default function NOCRtgsCapture() {
     async function load() {
       try {
         const [tts, anns] = await Promise.all([
-          getRTGSTickets(),
+          getRTGSTickets(minAging),
           getRTGSAnnotations(),
         ]);
         if (cancelled) return;
@@ -60,7 +69,7 @@ export default function NOCRtgsCapture() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [minAging]);
 
   if (!ready) {
     return (
@@ -98,6 +107,7 @@ export default function NOCRtgsCapture() {
       annotations={annotations}
       dateLabel={formatWIBDate()}
       timeLabel={formatWIBTime()}
+      variant={variant}
     />
   );
 }
