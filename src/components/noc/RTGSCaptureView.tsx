@@ -156,7 +156,7 @@ export function RTGSCaptureView({
               <th style={thStyle}>Umur Tiket (hari)</th>
               <th style={thStyle}>Problem Hasil Analisa</th>
               {!isExternal && <th style={thStyle}>Action</th>}
-              <th style={thStyle}>Kendala</th>
+              <th style={thStyle}>{isExternal ? 'Kendala & Action' : 'Kendala'}</th>
               {!isExternal && <th style={thStyle}>Plan Target Online</th>}
               {!isExternal && <th style={thStyle}>Update Target Online</th>}
             </tr>

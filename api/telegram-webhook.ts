@@ -135,12 +135,19 @@ async function sendCaptureToTelegram(
 // ─── RTGS Annotation helpers (for /rtgs-list & /rtgs-edit-* commands) ─────────
 
 const RTGS_DEFAULT_ACTION = 'Kunjungan Teknisi';
-const RTGS_REPLACE_TARGET = 'BELUM ADA KONFIRMASI PIC';
-const RTGS_LINK_OFFLINE_PATTERNS = new Set([
-  'LINK TIDAK TERDETEKSI / OFFLINE',
-  'LINK TIDAK TERDETEKSI/OFFLINE',
-  'LINK TIDAK TERDETEKSI',
-]);
+
+// Pola detail_prob yang otomatis di-replace di tampilan (display-only).
+// Key: pattern uppercase + trimmed. Value: teks pengganti.
+// Harus sinkron dengan PROBLEM_AUTO_REPLACE di src/lib/noc/rtgsQueries.ts.
+const RTGS_PROBLEM_AUTO_REPLACE: Record<string, string> = {
+  'LINK TIDAK TERDETEKSI / OFFLINE': 'BELUM ADA KONFIRMASI PIC',
+  'LINK TIDAK TERDETEKSI/OFFLINE': 'BELUM ADA KONFIRMASI PIC',
+  'LINK TIDAK TERDETEKSI': 'BELUM ADA KONFIRMASI PIC',
+  MISSPOINTING: 'BUC/LNB',
+  'MISS POINTING': 'BUC/LNB',
+  MISPOINTING: 'BUC/LNB',
+  'MIS POINTING': 'BUC/LNB',
+};
 
 type RtgsFieldAlias = 'problem' | 'action' | 'kendala' | 'target';
 const RTGS_FIELD_MAP: Record<
@@ -196,7 +203,8 @@ interface RtgsAnnRow {
 function rtgsEffectiveProblem(rec: RtgsTtRow, ann: RtgsAnnRow | null): string {
   if (ann?.is_problem_edited && ann.problem_analisa) return ann.problem_analisa;
   const dp = (rec.detail_prob ?? '').trim().toUpperCase();
-  if (RTGS_LINK_OFFLINE_PATTERNS.has(dp)) return RTGS_REPLACE_TARGET;
+  const replaced = RTGS_PROBLEM_AUTO_REPLACE[dp];
+  if (replaced) return replaced;
   return rec.detail_prob || '-';
 }
 function rtgsEffectiveAction(ann: RtgsAnnRow | null): string {

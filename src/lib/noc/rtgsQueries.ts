@@ -46,17 +46,23 @@ const ALL_FIELDS: RTGSField[] = [
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DEFAULT_ACTION = 'Kunjungan Teknisi';
-const REPLACE_TARGET = 'BELUM ADA KONFIRMASI PIC';
 
 /**
- * Pola detail_prob yang harus di-auto-replace jadi REPLACE_TARGET.
- * Toleran terhadap variasi spasi sekitar slash.
+ * Pola detail_prob yang otomatis di-replace di tampilan (display-only,
+ * tidak mengubah data DB). Key: pattern uppercase + trimmed. Value:
+ * teks yang ditampilkan sebagai pengganti.
+ *
+ * Toleran terhadap variasi spasi sekitar slash dan ejaan umum.
  */
-const LINK_OFFLINE_PATTERNS = new Set([
-  'LINK TIDAK TERDETEKSI / OFFLINE',
-  'LINK TIDAK TERDETEKSI/OFFLINE',
-  'LINK TIDAK TERDETEKSI',
-]);
+const PROBLEM_AUTO_REPLACE: Record<string, string> = {
+  'LINK TIDAK TERDETEKSI / OFFLINE': 'BELUM ADA KONFIRMASI PIC',
+  'LINK TIDAK TERDETEKSI/OFFLINE': 'BELUM ADA KONFIRMASI PIC',
+  'LINK TIDAK TERDETEKSI': 'BELUM ADA KONFIRMASI PIC',
+  MISSPOINTING: 'BUC/LNB',
+  'MISS POINTING': 'BUC/LNB',
+  MISPOINTING: 'BUC/LNB',
+  'MIS POINTING': 'BUC/LNB',
+};
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
@@ -153,7 +159,8 @@ export async function resetAnnotationField(
  * Compute effective Problem Analisa value.
  * Prioritas:
  *   1. Manual edit (kalau is_problem_edited & ada nilainya)
- *   2. Auto-replace untuk LINK TIDAK TERDETEKSI / OFFLINE
+ *   2. Auto-replace dari PROBLEM_AUTO_REPLACE (LINK OFFLINE → BELUM ADA
+ *      KONFIRMASI PIC, MISSPOINTING → BUC/LNB)
  *   3. Default dari detail_prob
  */
 export function getEffectiveProblem(
@@ -165,9 +172,8 @@ export function getEffectiveProblem(
   }
 
   const detailProb = (record.detail_prob ?? '').toUpperCase().trim();
-  if (LINK_OFFLINE_PATTERNS.has(detailProb)) {
-    return REPLACE_TARGET;
-  }
+  const replaced = PROBLEM_AUTO_REPLACE[detailProb];
+  if (replaced) return replaced;
 
   return record.detail_prob ?? '-';
 }
