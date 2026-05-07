@@ -142,4 +142,13 @@
   .gradient-card {
     background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(220 18% 12%) 100%);
   }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
 }

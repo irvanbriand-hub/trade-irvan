@@ -42,7 +42,7 @@ const tabs = [
 function NocTabs() {
   const { pathname } = useLocation();
   return (
-    <div className="flex gap-1 border-b border-border">
+    <div className="flex gap-1 border-b border-border overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
       {tabs.map((tab) => {
         const isActive = pathname.endsWith(`/noc/${tab.to}`) || pathname === `/noc/${tab.to}`;
         return (
@@ -50,7 +50,7 @@ function NocTabs() {
             key={tab.to}
             to={tab.to}
             className={[
-              'flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
+              'flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0',
               isActive
                 ? 'border-primary text-primary'
                 : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground',
@@ -83,7 +83,12 @@ function ResetDataButton() {
       <AlertDialogTrigger asChild>
         <Button variant="destructive" size="sm" className="gap-1.5" disabled={resetting}>
           <Trash2 className="h-3.5 w-3.5" />
-          {resetting ? 'Menghapus...' : 'Reset Data'}
+          <span className="hidden sm:inline">
+            {resetting ? 'Menghapus...' : 'Reset Data'}
+          </span>
+          <span className="sm:hidden">
+            {resetting ? '...' : 'Reset'}
+          </span>
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -114,7 +119,12 @@ function TradeJournalButton() {
     <Button variant="outline" size="sm" className="gap-1.5" asChild>
       <Link to={user ? '/journal' : '/login'}>
         <BarChart3 className="h-3.5 w-3.5" />
-        {user ? 'Trade Journal' : 'Login ke Trade Journal'}
+        <span className="hidden sm:inline">
+          {user ? 'Trade Journal' : 'Login ke Trade Journal'}
+        </span>
+        <span className="sm:hidden">
+          {user ? 'Journal' : 'Login'}
+        </span>
       </Link>
     </Button>
   );
@@ -129,15 +139,17 @@ function NocInner() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">📡</span>
-          <div>
-            <h1 className="text-2xl font-bold">NOC Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Monitoring trouble ticket jaringan</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-2xl flex-shrink-0">📡</span>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold leading-tight">NOC Dashboard</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              Monitoring trouble ticket jaringan
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <TradeJournalButton />
           <ResetDataButton />
         </div>

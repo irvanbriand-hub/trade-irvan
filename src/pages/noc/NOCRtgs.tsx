@@ -177,6 +177,307 @@ function EditableCell({
   );
 }
 
+// ─── Mobile Editable Field ───────────────────────────────────────────────────
+
+interface MobileEditableFieldProps {
+  label: string;
+  value: string;
+  isEdited: boolean;
+  isEditing: boolean;
+  onEditStart: () => void;
+  onSave: (val: string) => void;
+  onCancel: () => void;
+  onReset: () => void;
+}
+
+function MobileEditableField({
+  label,
+  value,
+  isEdited,
+  isEditing,
+  onEditStart,
+  onSave,
+  onCancel,
+  onReset,
+}: MobileEditableFieldProps) {
+  const [editValue, setEditValue] = useState(value);
+
+  useEffect(() => {
+    if (isEditing) setEditValue(value);
+  }, [isEditing, value]);
+
+  return (
+    <div className="px-3 py-2.5 border-t border-border/60">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </span>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {isEdited && !isEditing && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onReset();
+              }}
+              className="p-1 rounded hover:bg-destructive/20"
+              title="Reset ke default"
+            >
+              <RotateCcw className="h-3.5 w-3.5 text-amber-500" />
+            </button>
+          )}
+          {!isEditing && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onEditStart();
+              }}
+              className="p-1 rounded hover:bg-accent"
+              title="Edit"
+            >
+              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {isEditing ? (
+        <div className="flex gap-1.5">
+          <textarea
+            autoFocus
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            className="flex-1 min-h-[72px] text-sm p-2 border rounded bg-background"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSave(editValue);
+              }
+              if (e.key === 'Escape') onCancel();
+            }}
+          />
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => onSave(editValue)}
+              className="p-1.5 hover:bg-green-500/20 rounded border border-border"
+              title="Save (Enter)"
+            >
+              <Check className="h-4 w-4 text-green-600" />
+            </button>
+            <button
+              onClick={onCancel}
+              className="p-1.5 hover:bg-red-500/20 rounded border border-border"
+              title="Cancel (Esc)"
+            >
+              <X className="h-4 w-4 text-red-600" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          className="relative cursor-pointer rounded -mx-1 px-1 py-0.5 active:bg-accent/50"
+          onClick={onEditStart}
+        >
+          {isEdited && (
+            <div
+              className="absolute top-1 left-0 w-1 h-[calc(100%-8px)] bg-amber-400 rounded-r"
+              title="Sudah diedit manual"
+            />
+          )}
+          <p
+            className={cn(
+              'whitespace-pre-wrap text-sm pl-2 break-words',
+              isEdited && 'font-medium',
+              !value && 'text-muted-foreground italic',
+            )}
+          >
+            {value || '(kosong — tap untuk isi)'}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mobile Ticket Card ──────────────────────────────────────────────────────
+
+interface MobileTicketCardProps {
+  record: TTRecordDB;
+  annotation: RTGSAnnotation | null;
+  index: number;
+  isPreview: boolean;
+  isWillBeExternal: boolean;
+  isExternal: boolean;
+  noteRecap: string;
+  editingCell: { ticketId: string; field: RTGSField } | null;
+  setEditingCell: (cell: { ticketId: string; field: RTGSField } | null) => void;
+  onSave: (ticketId: string, field: RTGSField, value: string) => Promise<void>;
+  onReset: (ticketId: string, field: RTGSField) => Promise<void>;
+}
+
+function MobileTicketCard({
+  record,
+  annotation,
+  index,
+  isPreview,
+  isWillBeExternal,
+  isExternal,
+  noteRecap,
+  editingCell,
+  setEditingCell,
+  onSave,
+  onReset,
+}: MobileTicketCardProps) {
+  const problem = getEffectiveProblem(record, annotation);
+  const action = getEffectiveAction(annotation);
+  const kendala = getEffectiveKendala(annotation);
+  const planTarget = getEffectivePlanTargetOnline(annotation);
+  const updateTarget = formatTargetDateInline(pickTargetOnline(record));
+
+  const isProblemEdited = annotation?.is_problem_edited ?? false;
+  const isActionEdited = annotation?.is_action_edited ?? false;
+  const isKendalaEdited = annotation?.is_kendala_edited ?? false;
+  const isPlanTargetEdited = annotation?.is_plan_target_online_edited ?? false;
+
+  const isEditingField = (field: RTGSField) =>
+    editingCell?.ticketId === record.ticket_id && editingCell.field === field;
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg overflow-hidden bg-card',
+        isExternal
+          ? 'border-2 border-emerald-500'
+          : 'border border-border',
+        isPreview && 'bg-muted/30',
+        isWillBeExternal && 'bg-orange-500/[0.08]',
+        isExternal && 'bg-emerald-500/[0.05]',
+      )}
+    >
+      {/* Header */}
+      <div className="px-3 py-2.5 flex items-start gap-2">
+        <div className="flex flex-col items-center gap-1 flex-shrink-0">
+          <span className="text-sm font-semibold w-6 h-6 flex items-center justify-center rounded bg-yellow-400 text-black">
+            {index + 1}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <p className="font-mono text-[11px] text-muted-foreground truncate">
+                {record.site_id ?? '-'}
+              </p>
+              <p className="font-medium text-sm leading-tight break-words">
+                {record.site_name}
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1 flex-shrink-0">
+              {isPreview && (
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500 dark:text-blue-400 font-medium whitespace-nowrap"
+                  title="Akan masuk capture saat aging ≥ 7"
+                >
+                  Preview
+                </span>
+              )}
+              {isWillBeExternal && (
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-600 dark:text-orange-400 font-semibold whitespace-nowrap"
+                  title="Besok aging naik ke ≥ 10 → masuk report External"
+                >
+                  H-1 Ext
+                </span>
+              )}
+              {isExternal && (
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium whitespace-nowrap"
+                  title="Akan masuk report External (umur ≥ 10 hari)"
+                >
+                  Ext
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+            <span>{record.provinsi ?? '-'}</span>
+            <span>·</span>
+            <span>
+              Umur: <strong className="text-foreground">{record.down_time}</strong> hari
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Editable fields */}
+      <MobileEditableField
+        label="Problem Hasil Analisa"
+        value={problem}
+        isEdited={isProblemEdited}
+        isEditing={isEditingField('problem_analisa')}
+        onEditStart={() =>
+          setEditingCell({ ticketId: record.ticket_id, field: 'problem_analisa' })
+        }
+        onSave={(v) => onSave(record.ticket_id, 'problem_analisa', v)}
+        onCancel={() => setEditingCell(null)}
+        onReset={() => onReset(record.ticket_id, 'problem_analisa')}
+      />
+      <MobileEditableField
+        label="Action"
+        value={action}
+        isEdited={isActionEdited}
+        isEditing={isEditingField('action')}
+        onEditStart={() =>
+          setEditingCell({ ticketId: record.ticket_id, field: 'action' })
+        }
+        onSave={(v) => onSave(record.ticket_id, 'action', v)}
+        onCancel={() => setEditingCell(null)}
+        onReset={() => onReset(record.ticket_id, 'action')}
+      />
+      <MobileEditableField
+        label="Kendala"
+        value={kendala}
+        isEdited={isKendalaEdited}
+        isEditing={isEditingField('kendala')}
+        onEditStart={() =>
+          setEditingCell({ ticketId: record.ticket_id, field: 'kendala' })
+        }
+        onSave={(v) => onSave(record.ticket_id, 'kendala', v)}
+        onCancel={() => setEditingCell(null)}
+        onReset={() => onReset(record.ticket_id, 'kendala')}
+      />
+      <MobileEditableField
+        label="Plan Target Online"
+        value={planTarget}
+        isEdited={isPlanTargetEdited}
+        isEditing={isEditingField('plan_target_online')}
+        onEditStart={() =>
+          setEditingCell({ ticketId: record.ticket_id, field: 'plan_target_online' })
+        }
+        onSave={(v) => onSave(record.ticket_id, 'plan_target_online', v)}
+        onCancel={() => setEditingCell(null)}
+        onReset={() => onReset(record.ticket_id, 'plan_target_online')}
+      />
+
+      {/* Read-only footer */}
+      <div className="px-3 py-2 border-t border-border/60 bg-muted/20 text-[11px] space-y-0.5">
+        <div className="flex justify-between gap-2">
+          <span className="text-muted-foreground">Update Target Online</span>
+          <span className="font-medium">{updateTarget}</span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-muted-foreground flex-shrink-0">Note Recap</span>
+          <span className="text-right break-words">
+            {noteRecap ? (
+              <span className="text-foreground/80 whitespace-pre-wrap">{noteRecap}</span>
+            ) : (
+              <span className="opacity-50">-</span>
+            )}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function NOCRtgs() {
@@ -333,17 +634,17 @@ export default function NOCRtgs() {
   }
 
   return (
-    <div className="space-y-4 max-w-[1400px] mx-auto px-4">
+    <div className="space-y-4 max-w-[1400px] mx-auto px-3 sm:px-4">
       {/* Header */}
-      <div className="flex flex-wrap justify-between items-start gap-3">
+      <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:justify-between lg:items-start">
         <div>
           <h2 className="text-lg font-semibold">Tiket RTGS Mahaga</h2>
           <p className="text-xs text-muted-foreground">
             TT open dengan aging ≥ 5 hari
           </p>
         </div>
-        <div className="flex gap-2 items-center">
-          <div className="text-xs text-muted-foreground mr-2 flex gap-3">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+          <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 lg:mr-2">
             <span>
               Internal:{' '}
               <strong className="text-foreground">{captureCount} TT</strong>
@@ -358,7 +659,7 @@ export default function NOCRtgs() {
           </div>
           <Button
             size="sm"
-            className="gap-1.5"
+            className="gap-1.5 w-full lg:w-auto"
             onClick={handleCapture}
             disabled={isCapturing || captureCount === 0}
           >
@@ -416,7 +717,39 @@ export default function NOCRtgs() {
           </p>
         </div>
       ) : (
-        <div className="border rounded-md overflow-x-auto">
+        <>
+          {/* Mobile / Tablet — card stack */}
+          <div className="lg:hidden space-y-3">
+            {records.map((record, idx) => {
+              const annotation =
+                annotations.find((a) => a.ticket_id === record.ticket_id) ?? null;
+              const isPreview = isPreviewRow(record);
+              const isExternal = record.down_time >= 10;
+              const isWillBeExternal = record.down_time === 9;
+              const noteRecap = record.site_id
+                ? (getSiteNote(record.site_id)?.note?.trim() ?? '')
+                : '';
+              return (
+                <MobileTicketCard
+                  key={record.ticket_id}
+                  record={record}
+                  annotation={annotation}
+                  index={idx}
+                  isPreview={isPreview}
+                  isWillBeExternal={isWillBeExternal}
+                  isExternal={isExternal}
+                  noteRecap={noteRecap}
+                  editingCell={editingCell}
+                  setEditingCell={setEditingCell}
+                  onSave={handleSave}
+                  onReset={handleReset}
+                />
+              );
+            })}
+          </div>
+
+          {/* Desktop — tabel existing */}
+          <div className="hidden lg:block border rounded-md overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-yellow-400 text-black">
               <tr>
@@ -671,7 +1004,8 @@ export default function NOCRtgs() {
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {/* Hidden capture targets — di-pop dari layar saat handleCapture dijalankan */}
