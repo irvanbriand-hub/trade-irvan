@@ -317,7 +317,7 @@ function POBlock({ col, highlightedId }: { col: POColumn; highlightedId: string 
   return (
     <div
       id={`po-block-${col.poName}`}
-      className="flex flex-col min-w-[380px] max-w-[460px] rounded-lg border border-border bg-card overflow-hidden shrink-0"
+      className="flex flex-col w-full lg:min-w-[380px] lg:max-w-[460px] rounded-lg border border-border bg-card overflow-hidden lg:shrink-0"
     >
       {/* PO Header */}
       <div className="bg-slate-700/80 px-3 py-2">
@@ -446,8 +446,11 @@ export function RecapTable({ records, poList, initialHighlightId }: RecapTablePr
         {displayedColumns.length} PO · {records.length} TT
       </p>
 
-      {/* Horizontal scroll grid */}
-      <div className="flex gap-3 overflow-x-auto pb-3" style={{ minHeight: '200px' }}>
+      {/* Stack vertikal di mobile, horizontal scroll grid di desktop */}
+      <div
+        className="flex flex-col gap-3 lg:flex-row lg:overflow-x-auto pb-3"
+        style={{ minHeight: '200px' }}
+      >
         {displayedColumns.map((col) => (
           <POBlock key={col.poName} col={col} highlightedId={highlightedId} />
         ))}
