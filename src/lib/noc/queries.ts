@@ -231,24 +231,35 @@ export async function mergeTSVToSupabase(
   // overwrite. Reset manual di UI = clear → snapshot ulang di sync berikutnya.
   const incomingSiteIds = Array.from(
     new Set(records.map((r) => r.siteId).filter(Boolean)),
-  );
+  ) as string[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const annDb = supabase as any;
-  const { data: existingAnns, error: annFetchErr } = await annDb
-    .from('rtgs_annotations')
-    .select('site_id, plan_target_online')
-    .in('site_id', incomingSiteIds.length ? incomingSiteIds : ['__none__']);
+  // Chunk per 1000: PostgREST `.in()` pun cap 1000 baris. site_id unik di
+  // rtgs_annotations, jadi chunk ≤1000 id → ≤1000 row (pas, aman). Tanpa ini
+  // sebagian existing plan tak terbaca → ke-overwrite ulang dari TSV.
+  let annFetchErr: { message: string } | null = null;
+  const existingAnns: Array<{
+    site_id: string;
+    plan_target_online: string | null;
+  }> = [];
+  for (let i = 0; i < incomingSiteIds.length; i += 1000) {
+    const chunk = incomingSiteIds.slice(i, i + 1000);
+    const { data, error } = await annDb
+      .from('rtgs_annotations')
+      .select('site_id, plan_target_online')
+      .in('site_id', chunk);
+    if (error) {
+      annFetchErr = error;
+      break;
+    }
+    existingAnns.push(...((data ?? []) as typeof existingAnns));
+  }
 
   if (annFetchErr) {
     console.error('[mergeTSVToSupabase] Plan TO fetch error:', annFetchErr);
   } else {
     const annPlanMap = new Map<string, string | null>(
-      (existingAnns ?? []).map(
-        (a: { site_id: string; plan_target_online: string | null }) => [
-          a.site_id,
-          a.plan_target_online,
-        ],
-      ),
+      existingAnns.map((a) => [a.site_id, a.plan_target_online]),
     );
 
     const toSnapshot = records.filter((r) => {

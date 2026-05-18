@@ -69,14 +69,27 @@ const PROBLEM_AUTO_REPLACE: Record<string, string> = {
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
-/** Ambil semua annotations. */
+/**
+ * Ambil semua annotations.
+ * Wajib pagination: `.select()` PostgREST diam-diam cap 1000 baris, sedangkan
+ * rtgs_annotations bisa >1000 (auto-snapshot Plan Target Online per sync TT).
+ * Tanpa loop ini, anotasi yang terpotong tidak muncul di tampilan.
+ */
 export async function getRTGSAnnotations(): Promise<RTGSAnnotation[]> {
-  const { data, error } = await db
-    .from('rtgs_annotations')
-    .select('*');
-
-  if (error) throw error;
-  return (data ?? []) as RTGSAnnotation[];
+  const pageSize = 1000;
+  let all: RTGSAnnotation[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await db
+      .from('rtgs_annotations')
+      .select('*')
+      .order('id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as RTGSAnnotation[];
+    all = all.concat(batch);
+    if (batch.length < pageSize) break;
+  }
+  return all;
 }
 
 /**

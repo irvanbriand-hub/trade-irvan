@@ -294,19 +294,30 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
     return;
   }
 
-  const { data: annsRaw, error: annErr } = await supabaseAdmin
-    .from('rtgs_annotations')
-    .select('*');
-  if (annErr) {
-    await sendTelegramMessage(
-      chatId,
-      `❌ Gagal load annotations: ${annErr.message}`,
-      { parseMode: null },
-    );
-    return;
+  // Pagination wajib: PostgREST cap 1000 baris/`select`, rtgs_annotations
+  // bisa >1000 (auto-snapshot Plan TO per sync). Tanpa loop ini sebagian
+  // anotasi terpotong → tidak muncul di /rtgs-list.
+  const annsRaw: RtgsAnnRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error: annErr } = await supabaseAdmin
+      .from('rtgs_annotations')
+      .select('*')
+      .order('id', { ascending: true })
+      .range(from, from + 999);
+    if (annErr) {
+      await sendTelegramMessage(
+        chatId,
+        `❌ Gagal load annotations: ${annErr.message}`,
+        { parseMode: null },
+      );
+      return;
+    }
+    const batch = (data ?? []) as RtgsAnnRow[];
+    annsRaw.push(...batch);
+    if (batch.length < 1000) break;
   }
   const annMap = new Map<string, RtgsAnnRow>();
-  for (const a of (annsRaw ?? []) as RtgsAnnRow[]) {
+  for (const a of annsRaw) {
     if (a.site_id) annMap.set(a.site_id, a);
   }
 
