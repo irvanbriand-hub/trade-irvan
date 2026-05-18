@@ -86,8 +86,10 @@ export function RTGSCaptureView({
   timeLabel,
   variant = 'internal',
 }: RTGSCaptureViewProps) {
-  const annotationByTicket = new Map(
-    annotations.map((a) => [a.ticket_id, a]),
+  const annotationBySite = new Map(
+    annotations
+      .filter((a) => a.site_id)
+      .map((a) => [a.site_id as string, a]),
   );
 
   const isExternal = variant === 'external';
@@ -163,7 +165,10 @@ export function RTGSCaptureView({
           </thead>
           <tbody>
             {records.map((record, idx) => {
-              const annotation = annotationByTicket.get(record.ticket_id) ?? null;
+              const annotation =
+                (record.site_id
+                  ? annotationBySite.get(record.site_id)
+                  : null) ?? null;
               const problem = getEffectiveProblem(record, annotation);
               const action = getEffectiveAction(annotation);
               const bg = idx % 2 === 0 ? '#ffffff' : '#fafafa';

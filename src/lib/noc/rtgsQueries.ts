@@ -10,6 +10,9 @@ const db = supabase as any;
 
 export interface RTGSAnnotation {
   id: string;
+  /** Kunci stabil per site fisik. Anotasi persist lintas reissue tiket. */
+  site_id: string | null;
+  /** Tiket terakhir yang menyentuh anotasi ini — referensi saja, bukan kunci. */
   ticket_id: string;
   problem_analisa: string | null;
   action: string | null;
@@ -94,25 +97,51 @@ export async function getRTGSTickets(minAging = 7): Promise<TTRecordDB[]> {
 }
 
 /**
- * Upsert satu field annotation untuk ticket tertentu.
+ * Upsert satu field annotation untuk satu site.
+ * - Kunci = site_id (stabil). `ticketId` dipakai utk snapshot target online
+ *   & disimpan sebagai referensi tiket terakhir.
  * - Set flag is_*_edited = true untuk field target.
  * - Semua field lain di-preserve dari row existing (kalau ada).
+ * - Bonus: kalau annotation belum punya plan_target_online, snapshot dari
+ *   tt_records.target_online_original. Ini mirror behavior snapshot di
+ *   mergeTSVToSupabase, biar Plan Target Online tetap terisi walaupun user
+ *   edit field lain duluan sebelum sync TSV berikutnya.
  */
 export async function upsertAnnotation(
+  siteId: string,
   ticketId: string,
   field: RTGSField,
   value: string,
 ): Promise<void> {
-  const { data: existing, error: fetchErr } = await db
-    .from('rtgs_annotations')
-    .select('*')
-    .eq('ticket_id', ticketId)
-    .maybeSingle();
+  if (!siteId) {
+    throw new Error(
+      `Tidak bisa simpan anotasi: site_id kosong untuk tiket ${ticketId}.`,
+    );
+  }
 
+  const [annResult, ttResult] = await Promise.all([
+    db
+      .from('rtgs_annotations')
+      .select('*')
+      .eq('site_id', siteId)
+      .maybeSingle(),
+    db
+      .from('tt_records')
+      .select('target_online_original')
+      .eq('ticket_id', ticketId)
+      .maybeSingle(),
+  ]);
+
+  const { data: existing, error: fetchErr } = annResult;
   if (fetchErr) throw fetchErr;
+
+  const ttRecord = ttResult.data as
+    | { target_online_original: string | null }
+    | null;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: any = {
+    site_id: siteId,
     ticket_id: ticketId,
     [field]: value,
     [FIELD_FLAG_MAP[field]]: true,
@@ -127,18 +156,30 @@ export async function upsertAnnotation(
     }
   }
 
+  // Auto-snapshot plan_target_online dari TT record kalau annotation belum
+  // punya. Tidak overwrite manual edit (cek is_plan_target_online_edited dulu).
+  if (field !== 'plan_target_online' && ttRecord?.target_online_original) {
+    const existingPlan = existing?.plan_target_online;
+    const existingPlanFlag = existing?.is_plan_target_online_edited;
+    if (!existingPlanFlag && (existingPlan == null || existingPlan === '')) {
+      updateData.plan_target_online = ttRecord.target_online_original;
+    }
+  }
+
   const { error } = await db
     .from('rtgs_annotations')
-    .upsert(updateData, { onConflict: 'ticket_id' });
+    .upsert(updateData, { onConflict: 'site_id' });
 
   if (error) throw error;
 }
 
-/** Reset satu field ke default (NULL, flag false). */
+/** Reset satu field ke default (NULL, flag false). Kunci = site_id. */
 export async function resetAnnotationField(
-  ticketId: string,
+  siteId: string,
   field: RTGSField,
 ): Promise<void> {
+  if (!siteId) return;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: any = {
     [field]: null,
@@ -148,7 +189,7 @@ export async function resetAnnotationField(
   const { error } = await db
     .from('rtgs_annotations')
     .update(updateData)
-    .eq('ticket_id', ticketId);
+    .eq('site_id', siteId);
 
   if (error) throw error;
 }

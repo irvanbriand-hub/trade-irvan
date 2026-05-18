@@ -189,6 +189,7 @@ interface RtgsTtRow {
 }
 
 interface RtgsAnnRow {
+  site_id: string | null;
   ticket_id: string;
   problem_analisa: string | null;
   action: string | null;
@@ -305,12 +306,14 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
     return;
   }
   const annMap = new Map<string, RtgsAnnRow>();
-  for (const a of (annsRaw ?? []) as RtgsAnnRow[]) annMap.set(a.ticket_id, a);
+  for (const a of (annsRaw ?? []) as RtgsAnnRow[]) {
+    if (a.site_id) annMap.set(a.site_id, a);
+  }
 
   const { date: dateLabel, time: timeLabel } = getRtgsWIBLabel();
 
   const items = tickets.map((t, i) => {
-    const ann = annMap.get(t.ticket_id) ?? null;
+    const ann = (t.site_id ? annMap.get(t.site_id) : null) ?? null;
     return [
       `${i + 1}. ${t.site_name} — ${t.down_time} hari`,
       `   Site   : ${t.site_id ?? '-'}`,
@@ -414,11 +417,21 @@ async function handleRtgsEdit(
     return;
   }
 
-  // Fetch existing annotation untuk preserve field-field lain.
+  if (!item.site_id) {
+    await sendTelegramMessage(
+      chatId,
+      `❌ #${idx} ${item.site_name} tidak punya site_id — anotasi tidak bisa disimpan.`,
+      { parseMode: null },
+    );
+    return;
+  }
+
+  // Fetch existing annotation untuk preserve field-field lain. Kunci = site_id
+  // (stabil lintas reissue tiket).
   const { data: existing, error: fetchErr } = await supabaseAdmin
     .from('rtgs_annotations')
     .select('*')
-    .eq('ticket_id', item.ticket_id)
+    .eq('site_id', item.site_id)
     .maybeSingle();
   if (fetchErr) {
     await sendTelegramMessage(
@@ -430,6 +443,7 @@ async function handleRtgsEdit(
   }
 
   const updateData: Record<string, any> = {
+    site_id: item.site_id,
     ticket_id: item.ticket_id,
     [fieldInfo.col]: value,
     [fieldInfo.flag]: true,
@@ -445,7 +459,7 @@ async function handleRtgsEdit(
 
   const { error: upErr } = await supabaseAdmin
     .from('rtgs_annotations')
-    .upsert(updateData, { onConflict: 'ticket_id' });
+    .upsert(updateData, { onConflict: 'site_id' });
   if (upErr) {
     await sendTelegramMessage(chatId, `❌ Gagal simpan: ${upErr.message}`, {
       parseMode: null,

@@ -224,44 +224,49 @@ export async function mergeTSVToSupabase(
 
   await Promise.all(writeOps);
 
-  // Snapshot Plan Target Online (RTGS report) untuk TT yang belum punya plan.
-  // Dijalankan sekali per ticket: saat pertama kali muncul di TSV → snapshot
+  // Snapshot Plan Target Online (RTGS report) untuk site yang belum punya plan.
+  // Dijalankan sekali per site: saat pertama kali muncul di TSV → snapshot
   // value target_online dari TSV → freeze di rtgs_annotations.plan_target_online.
-  // Sync berikutnya tidak akan overwrite. Reset manual di UI = clear → snapshot
-  // ulang dari TSV terkini di sync berikutnya.
+  // Kunci = site_id (stabil lintas reissue tiket). Sync berikutnya tidak
+  // overwrite. Reset manual di UI = clear → snapshot ulang di sync berikutnya.
+  const incomingSiteIds = Array.from(
+    new Set(records.map((r) => r.siteId).filter(Boolean)),
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const annDb = supabase as any;
   const { data: existingAnns, error: annFetchErr } = await annDb
     .from('rtgs_annotations')
-    .select('ticket_id, plan_target_online')
-    .in('ticket_id', Array.from(incomingTicketIds));
+    .select('site_id, plan_target_online')
+    .in('site_id', incomingSiteIds.length ? incomingSiteIds : ['__none__']);
 
   if (annFetchErr) {
     console.error('[mergeTSVToSupabase] Plan TO fetch error:', annFetchErr);
   } else {
     const annPlanMap = new Map<string, string | null>(
       (existingAnns ?? []).map(
-        (a: { ticket_id: string; plan_target_online: string | null }) => [
-          a.ticket_id,
+        (a: { site_id: string; plan_target_online: string | null }) => [
+          a.site_id,
           a.plan_target_online,
         ],
       ),
     );
 
     const toSnapshot = records.filter((r) => {
+      if (!r.siteId) return false; // tanpa site_id → tak bisa di-key, skip
       if (!r.targetOnline) return false; // TSV target kosong → skip
-      const existingPlan = annPlanMap.get(r.ticketId);
+      const existingPlan = annPlanMap.get(r.siteId);
       return existingPlan == null || existingPlan === '';
     });
 
     if (toSnapshot.length > 0) {
       const snapshotData = toSnapshot.map((r) => ({
+        site_id: r.siteId,
         ticket_id: r.ticketId,
         plan_target_online: r.targetOnline,
       }));
       const { error: snapshotErr } = await annDb
         .from('rtgs_annotations')
-        .upsert(snapshotData, { onConflict: 'ticket_id' });
+        .upsert(snapshotData, { onConflict: 'site_id' });
       if (snapshotErr) {
         // Non-fatal: sync TT records sudah sukses, snapshot bisa retry next sync.
         console.error('[mergeTSVToSupabase] Plan TO snapshot error:', snapshotErr);

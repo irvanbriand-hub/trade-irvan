@@ -518,9 +518,19 @@ export default function NOCRtgs() {
     loadData();
   }, []);
 
+  function siteIdForTicket(ticketId: string): string | null {
+    return records.find((r) => r.ticket_id === ticketId)?.site_id ?? null;
+  }
+
   async function handleSave(ticketId: string, field: RTGSField, value: string) {
     try {
-      await upsertAnnotation(ticketId, field, value);
+      const siteId = siteIdForTicket(ticketId);
+      if (!siteId) {
+        throw new Error(
+          `Site ID tidak ditemukan untuk tiket ${ticketId} — anotasi tidak bisa disimpan.`,
+        );
+      }
+      await upsertAnnotation(siteId, ticketId, field, value);
       await loadData();
       setEditingCell(null);
     } catch (err) {
@@ -534,7 +544,13 @@ export default function NOCRtgs() {
 
   async function handleReset(ticketId: string, field: RTGSField) {
     try {
-      await resetAnnotationField(ticketId, field);
+      const siteId = siteIdForTicket(ticketId);
+      if (!siteId) {
+        throw new Error(
+          `Site ID tidak ditemukan untuk tiket ${ticketId} — reset gagal.`,
+        );
+      }
+      await resetAnnotationField(siteId, field);
       await loadData();
     } catch (err) {
       toast({
@@ -722,7 +738,9 @@ export default function NOCRtgs() {
           <div className="lg:hidden space-y-3">
             {records.map((record, idx) => {
               const annotation =
-                annotations.find((a) => a.ticket_id === record.ticket_id) ?? null;
+                (record.site_id
+                  ? annotations.find((a) => a.site_id === record.site_id)
+                  : null) ?? null;
               const isPreview = isPreviewRow(record);
               const isExternal = record.down_time >= 10;
               const isWillBeExternal = record.down_time === 9;
@@ -769,8 +787,9 @@ export default function NOCRtgs() {
             <tbody>
               {records.map((record, idx) => {
                 const annotation =
-                  annotations.find((a) => a.ticket_id === record.ticket_id) ??
-                  null;
+                  (record.site_id
+                    ? annotations.find((a) => a.site_id === record.site_id)
+                    : null) ?? null;
                 const problem = getEffectiveProblem(record, annotation);
                 const action = getEffectiveAction(annotation);
                 const isProblemEdited = annotation?.is_problem_edited ?? false;
