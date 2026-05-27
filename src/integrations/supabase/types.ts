@@ -873,6 +873,95 @@ export type Database = {
         }
         Relationships: []
       }
+      content_pages: {
+        Row: {
+          brand: string | null
+          color: string | null
+          content_type: string
+          created_at: string
+          handle: string | null
+          id: string
+          is_active: boolean
+          name: string
+          platform: string
+          user_id: string
+        }
+        Insert: {
+          brand?: string | null
+          color?: string | null
+          content_type?: string
+          created_at?: string
+          handle?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          platform: string
+          user_id: string
+        }
+        Update: {
+          brand?: string | null
+          color?: string | null
+          content_type?: string
+          created_at?: string
+          handle?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          platform?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      content_schedules: {
+        Row: {
+          bulk_batch_id: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          page_id: string
+          posted_at: string | null
+          scheduled_at: string
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bulk_batch_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          page_id: string
+          posted_at?: string | null
+          scheduled_at: string
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bulk_batch_id?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          page_id?: string
+          posted_at?: string | null
+          scheduled_at?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "content_schedules_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "content_pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_formulas: {
         Row: {
           created_at: string
@@ -987,6 +1076,405 @@ export type Database = {
         }
         Relationships: []
       }
+      noc_perf_cboss: {
+        Row: {
+          aging_days: number | null
+          category_detail: string | null
+          category_problem: string
+          cboss_id: string
+          closed_at: string
+          created_at: string | null
+          opened_at: string
+          site_id: string
+          spmk_id: string | null
+        }
+        Insert: {
+          aging_days?: number | null
+          category_detail?: string | null
+          category_problem: string
+          cboss_id: string
+          closed_at: string
+          created_at?: string | null
+          opened_at: string
+          site_id: string
+          spmk_id?: string | null
+        }
+        Update: {
+          aging_days?: number | null
+          category_detail?: string | null
+          category_problem?: string
+          cboss_id?: string
+          closed_at?: string
+          created_at?: string | null
+          opened_at?: string
+          site_id?: string
+          spmk_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_cboss_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_cboss_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_classifications: {
+        Row: {
+          classification_period: string
+          computed_at: string | null
+          confidence: number | null
+          id: number
+          issue_profile: string | null
+          pattern: string
+          severity: string | null
+          site_id: string
+          tags: Json | null
+        }
+        Insert: {
+          classification_period: string
+          computed_at?: string | null
+          confidence?: number | null
+          id?: number
+          issue_profile?: string | null
+          pattern: string
+          severity?: string | null
+          site_id: string
+          tags?: Json | null
+        }
+        Update: {
+          classification_period?: string
+          computed_at?: string | null
+          confidence?: number | null
+          id?: number
+          issue_profile?: string | null
+          pattern?: string
+          severity?: string | null
+          site_id?: string
+          tags?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_classifications_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_classifications_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_csr_log: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          csr_date: string
+          csr_detail: string | null
+          csr_type: string
+          id: number
+          site_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          csr_date: string
+          csr_detail?: string | null
+          csr_type: string
+          id?: number
+          site_id: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          csr_date?: string
+          csr_detail?: string | null
+          csr_type?: string
+          id?: number
+          site_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_csr_log_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_csr_log_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_daily_ping: {
+        Row: {
+          created_at: string | null
+          id: number
+          ping_date: string
+          ping_value: number
+          site_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          ping_date: string
+          ping_value: number
+          site_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          ping_date?: string
+          ping_value?: number
+          site_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_daily_ping_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_daily_ping_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_nmt: {
+        Row: {
+          aging_days: number | null
+          category_detail: string | null
+          category_problem: string
+          closed_at: string
+          created_at: string | null
+          nmt_id: string
+          opened_at: string
+          site_id: string
+        }
+        Insert: {
+          aging_days?: number | null
+          category_detail?: string | null
+          category_problem: string
+          closed_at: string
+          created_at?: string | null
+          nmt_id: string
+          opened_at: string
+          site_id: string
+        }
+        Update: {
+          aging_days?: number | null
+          category_detail?: string | null
+          category_problem?: string
+          closed_at?: string
+          created_at?: string | null
+          nmt_id?: string
+          opened_at?: string
+          site_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_nmt_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_nmt_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_sites: {
+        Row: {
+          created_at: string | null
+          is_papua: boolean
+          province: string
+          regency: string
+          site_id: string
+          site_name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          is_papua?: boolean
+          province: string
+          regency: string
+          site_id: string
+          site_name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          is_papua?: boolean
+          province?: string
+          regency?: string
+          site_id?: string
+          site_name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      noc_perf_sla_monthly: {
+        Row: {
+          created_at: string | null
+          id: number
+          period: string
+          site_id: string
+          sla_final_bakti: number
+          total_pct: number | null
+          total_pembulatan: number | null
+          uptime_cuaca: number
+          uptime_listrik: number
+          uptime_real: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          period: string
+          site_id: string
+          sla_final_bakti: number
+          total_pct?: number | null
+          total_pembulatan?: number | null
+          uptime_cuaca?: number
+          uptime_listrik?: number
+          uptime_real: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          period?: string
+          site_id?: string
+          sla_final_bakti?: number
+          total_pct?: number | null
+          total_pembulatan?: number | null
+          uptime_cuaca?: number
+          uptime_listrik?: number
+          uptime_real?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_sla_monthly_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_sla_monthly_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_tmo: {
+        Row: {
+          created_at: string | null
+          site_id: string | null
+          spmk_id: string
+          tanggal_tmo: string | null
+          technician_name: string | null
+          tmo_action: string
+          verified_by_noc: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          site_id?: string | null
+          spmk_id: string
+          tanggal_tmo?: string | null
+          technician_name?: string | null
+          tmo_action: string
+          verified_by_noc?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          site_id?: string | null
+          spmk_id?: string
+          tanggal_tmo?: string | null
+          technician_name?: string | null
+          tmo_action?: string
+          verified_by_noc?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "noc_perf_tmo_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_mv_site_metrics"
+            referencedColumns: ["site_id"]
+          },
+          {
+            foreignKeyName: "noc_perf_tmo_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "noc_perf_sites"
+            referencedColumns: ["site_id"]
+          },
+        ]
+      }
+      noc_perf_uploads: {
+        Row: {
+          errors: Json | null
+          filename: string
+          id: number
+          rows_failed: number
+          rows_processed: number
+          status: string
+          upload_type: string
+          uploaded_at: string | null
+          uploaded_by: string | null
+        }
+        Insert: {
+          errors?: Json | null
+          filename: string
+          id?: number
+          rows_failed?: number
+          rows_processed?: number
+          status: string
+          upload_type: string
+          uploaded_at?: string | null
+          uploaded_by?: string | null
+        }
+        Update: {
+          errors?: Json | null
+          filename?: string
+          id?: number
+          rows_failed?: number
+          rows_processed?: number
+          status?: string
+          upload_type?: string
+          uploaded_at?: string | null
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       po_list: {
         Row: {
           area: number
@@ -1029,8 +1517,13 @@ export type Database = {
           created_at: string | null
           id: string
           is_action_edited: boolean | null
+          is_kendala_edited: boolean
+          is_plan_target_online_edited: boolean
           is_problem_edited: boolean | null
+          kendala: string | null
+          plan_target_online: string | null
           problem_analisa: string | null
+          site_id: string | null
           ticket_id: string
           updated_at: string | null
         }
@@ -1039,8 +1532,13 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_action_edited?: boolean | null
+          is_kendala_edited?: boolean
+          is_plan_target_online_edited?: boolean
           is_problem_edited?: boolean | null
+          kendala?: string | null
+          plan_target_online?: string | null
           problem_analisa?: string | null
+          site_id?: string | null
           ticket_id: string
           updated_at?: string | null
         }
@@ -1049,8 +1547,13 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_action_edited?: boolean | null
+          is_kendala_edited?: boolean
+          is_plan_target_online_edited?: boolean
           is_problem_edited?: boolean | null
+          kendala?: string | null
+          plan_target_online?: string | null
           problem_analisa?: string | null
+          site_id?: string | null
           ticket_id?: string
           updated_at?: string | null
         }
@@ -1385,6 +1888,27 @@ export type Database = {
         }
         Relationships: []
       }
+      telegram_rtgs_list_snapshot: {
+        Row: {
+          chat_id: string
+          created_at: string | null
+          tickets: Json
+          updated_at: string | null
+        }
+        Insert: {
+          chat_id: string
+          created_at?: string | null
+          tickets: Json
+          updated_at?: string | null
+        }
+        Update: {
+          chat_id?: string
+          created_at?: string | null
+          tickets?: Json
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       trades: {
         Row: {
           category_id: string | null
@@ -1715,10 +2239,86 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      noc_perf_mv_regency_categories: {
+        Row: {
+          category_problem: string | null
+          province: string | null
+          regency: string | null
+          ticket_count: number | null
+        }
+        Relationships: []
+      }
+      noc_perf_mv_regency_sla_monthly: {
+        Row: {
+          avg_sla_final_bakti: number | null
+          avg_uptime_real: number | null
+          period: string | null
+          province: string | null
+          regency: string | null
+          site_count: number | null
+        }
+        Relationships: []
+      }
+      noc_perf_mv_regency_summary: {
+        Row: {
+          avg_resolution_days: number | null
+          avg_sla: number | null
+          computed_at: string | null
+          intensity_score: number | null
+          is_papua: boolean | null
+          overdue_count: number | null
+          overdue_pct: number | null
+          problematic_sites: number | null
+          province: string | null
+          regency: string | null
+          repeat_offender_count: number | null
+          total_cboss: number | null
+          total_nmt: number | null
+          total_self_recovery: number | null
+          total_sites: number | null
+          total_visits: number | null
+          visit_pct: number | null
+        }
+        Relationships: []
+      }
+      noc_perf_mv_site_metrics: {
+        Row: {
+          avg_uptime_real: number | null
+          cboss_avg_aging: number | null
+          cboss_count: number | null
+          computed_at: string | null
+          csr_types: string[] | null
+          hardware_count: number | null
+          has_csr: boolean | null
+          has_ping_data: boolean | null
+          is_papua: boolean | null
+          issue_profile: string | null
+          latest_sla_final_bakti: number | null
+          latest_uptime_real: number | null
+          link_count: number | null
+          nmt_avg_aging: number | null
+          nmt_count: number | null
+          overdue_count: number | null
+          pattern: string | null
+          power_count: number | null
+          province: string | null
+          regency: string | null
+          self_recovery_count: number | null
+          severity: string | null
+          site_id: string | null
+          site_name: string | null
+          sla_trend_3m: number | null
+          tags: Json | null
+          top_category: string | null
+          visit_count: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      noc_perf_is_admin: { Args: never; Returns: boolean }
+      noc_perf_refresh_views: { Args: never; Returns: undefined }
+      noc_perf_reset_data: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

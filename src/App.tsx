@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { type ReactNode } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
@@ -27,6 +27,8 @@ import ResearchScreener from "./pages/ResearchScreener";
 import AraHunter from "./pages/AraHunter";
 import JendralHunter from "./pages/JendralHunter";
 import BackupRestore from "./pages/BackupRestore";
+import ContentTrackerLayout from "./pages/content-tracker/ContentTrackerLayout";
+import { canAccessContentTracker } from "@/lib/content-tracker";
 import NocLayout from "./pages/noc/NocLayout";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
@@ -50,11 +52,15 @@ function RootRedirect() {
   return <Navigate to="/noc" replace />;
 }
 
-// Hanya untuk /login — redirect ke /dashboard jika sudah login
+// Hanya untuk /login — kalau sudah login, redirect ke ?redirect= (kalau ada) atau /dashboard
 function PublicOnlyRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const [params] = useSearchParams();
   if (loading) return <Spinner />;
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) {
+    const redirect = params.get("redirect");
+    return <Navigate to={redirect || "/dashboard"} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -88,6 +94,10 @@ function ProtectedApp() {
         <Route path="/ara-hunter" element={<AraHunter />} />
         <Route path="/jendral-hunter" element={<JendralHunter />} />
         <Route path="/backup" element={<BackupRestore />} />
+        <Route
+          path="/content-tracker/*"
+          element={canAccessContentTracker(user.email) ? <ContentTrackerLayout /> : <Navigate to="/dashboard" replace />}
+        />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

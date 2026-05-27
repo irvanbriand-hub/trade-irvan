@@ -7,6 +7,7 @@ import {
 import { useTheme } from "next-themes";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { canAccessContentTracker } from "@/lib/content-tracker";
 
 interface NavChild {
   to: string;
@@ -69,6 +70,11 @@ const navGroups: NavGroup[] = [
       { to: "/modal-equity", label: "Modal & Equity" },
       { to: "/backup", label: "💾 Backup & Restore" },
     ],
+  },
+  {
+    label: "Content",
+    icon: "📅",
+    to: "/content-tracker",
   },
   {
     label: "NOC",
@@ -149,7 +155,7 @@ function DesktopDropdown({ group }: { group: NavGroup }) {
   );
 }
 
-function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+function MobileMenu({ isOpen, onClose, groups }: { isOpen: boolean; onClose: () => void; groups: NavGroup[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const location = useLocation();
   const { user, signOut } = useAuth();
@@ -191,7 +197,7 @@ function MobileMenu({ isOpen, onClose }: { isOpen: boolean; onClose: () => void 
         </NavLink>
 
         {/* Nav Groups */}
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={group.label} className="border-b border-border/50">
             {group.to && !group.children ? (
               <NavLink
@@ -268,6 +274,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const location = useLocation();
 
+  // Sembunyikan menu Content untuk user selain pemilik
+  const visibleGroups = navGroups.filter(
+    (g) => g.label !== "Content" || canAccessContentTracker(user?.email),
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Navbar */}
@@ -297,7 +308,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               Dashboard
             </NavLink>
 
-            {navGroups.map((group) => (
+            {visibleGroups.map((group) => (
               <DesktopDropdown key={group.label} group={group} />
             ))}
           </nav>
@@ -345,7 +356,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Mobile Menu */}
-      <MobileMenu isOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <MobileMenu isOpen={mobileOpen} onClose={() => setMobileOpen(false)} groups={visibleGroups} />
 
       {/* Main Content - full width */}
       <main className="max-w-[1400px] mx-auto px-4 py-4 lg:py-6">{children}</main>
