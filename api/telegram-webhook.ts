@@ -183,6 +183,7 @@ interface RtgsTtRow {
   provinsi: string | null;
   down_time: number;
   detail_prob: string | null;
+  date_start: string | null;
   target_online_original: string | null;
   target_online_edited: string | null;
   is_manually_edited: boolean | null;
@@ -195,6 +196,7 @@ interface RtgsAnnRow {
   action: string | null;
   kendala: string | null;
   plan_target_online: string | null;
+  incident_start: string | null;
   is_problem_edited: boolean | null;
   is_action_edited: boolean | null;
   is_kendala_edited: boolean | null;
@@ -266,7 +268,7 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
   const { data: ttsRaw, error: ttsErr } = await supabaseAdmin
     .from('tt_records')
     .select(
-      'ticket_id, site_id, site_name, provinsi, down_time, detail_prob, target_online_original, target_online_edited, is_manually_edited',
+      'ticket_id, site_id, site_name, provinsi, down_time, detail_prob, date_start, target_online_original, target_online_edited, is_manually_edited',
     )
     .eq('status', 'OPEN')
     .gte('down_time', minAging)
@@ -324,7 +326,10 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
   const { date: dateLabel, time: timeLabel } = getRtgsWIBLabel();
 
   const items = tickets.map((t, i) => {
-    const ann = (t.site_id ? annMap.get(t.site_id) : null) ?? null;
+    const annRaw = (t.site_id ? annMap.get(t.site_id) : null) ?? null;
+    // Gate per insiden: anotasi insiden lama (incident_start ≠ date_start tiket
+    // sekarang) diabaikan → tidak ikut tampil di list Telegram.
+    const ann = annRaw && annRaw.incident_start === t.date_start ? annRaw : null;
     return [
       `${i + 1}. ${t.site_name} — ${t.down_time} hari`,
       `   Site   : ${t.site_id ?? '-'}`,
@@ -357,6 +362,7 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
     site_id: t.site_id,
     site_name: t.site_name,
     down_time: t.down_time,
+    date_start: t.date_start,
   }));
   const { error: snapUpErr } = await supabaseAdmin
     .from('telegram_rtgs_list_snapshot')
@@ -417,6 +423,7 @@ async function handleRtgsEdit(
     site_id: string | null;
     site_name: string;
     down_time: number;
+    date_start?: string | null;
   }>);
   const item = tickets.find((t) => t.idx === idx);
   if (!item) {
@@ -437,13 +444,21 @@ async function handleRtgsEdit(
     return;
   }
 
-  // Fetch existing annotation untuk preserve field-field lain. Kunci = site_id
-  // (stabil lintas reissue tiket).
-  const { data: existing, error: fetchErr } = await supabaseAdmin
-    .from('rtgs_annotations')
-    .select('*')
-    .eq('site_id', item.site_id)
-    .maybeSingle();
+  // Fetch existing annotation + date_start tiket OPEN sekarang (kunci insiden).
+  // Kunci anotasi = site_id (stabil lintas reissue tiket).
+  const [{ data: existing, error: fetchErr }, { data: ttRow }] = await Promise.all([
+    supabaseAdmin
+      .from('rtgs_annotations')
+      .select('*')
+      .eq('site_id', item.site_id)
+      .maybeSingle(),
+    supabaseAdmin
+      .from('tt_records')
+      .select('date_start')
+      .eq('site_id', item.site_id)
+      .eq('status', 'OPEN')
+      .maybeSingle(),
+  ]);
   if (fetchErr) {
     await sendTelegramMessage(
       chatId,
@@ -453,18 +468,34 @@ async function handleRtgsEdit(
     return;
   }
 
+  // date_start dari snapshot (kalau ada) atau dari tt_records OPEN terkini.
+  const incidentStart =
+    (item.date_start ?? null) || ((ttRow as any)?.date_start ?? null);
+  const isNewIncident =
+    !!existing && (existing as any).incident_start !== incidentStart;
+
   const updateData: Record<string, any> = {
     site_id: item.site_id,
     ticket_id: item.ticket_id,
+    incident_start: incidentStart,
     [fieldInfo.col]: value,
     [fieldInfo.flag]: true,
   };
-  if (existing) {
+  if (existing && !isNewIncident) {
+    // Insiden sama → preserve field lain.
     for (const otherKey of Object.keys(RTGS_FIELD_MAP) as RtgsFieldAlias[]) {
       if (otherKey === fieldAlias) continue;
       const oi = RTGS_FIELD_MAP[otherKey];
       updateData[oi.col] = (existing as any)[oi.col];
       updateData[oi.flag] = (existing as any)[oi.flag];
+    }
+  } else if (isNewIncident) {
+    // Insiden baru → reset field lain ke default.
+    for (const otherKey of Object.keys(RTGS_FIELD_MAP) as RtgsFieldAlias[]) {
+      if (otherKey === fieldAlias) continue;
+      const oi = RTGS_FIELD_MAP[otherKey];
+      updateData[oi.col] = null;
+      updateData[oi.flag] = false;
     }
   }
 

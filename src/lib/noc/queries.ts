@@ -241,12 +241,13 @@ export async function mergeTSVToSupabase(
   const existingAnns: Array<{
     site_id: string;
     plan_target_online: string | null;
+    incident_start: string | null;
   }> = [];
   for (let i = 0; i < incomingSiteIds.length; i += 1000) {
     const chunk = incomingSiteIds.slice(i, i + 1000);
     const { data, error } = await annDb
       .from('rtgs_annotations')
-      .select('site_id, plan_target_online')
+      .select('site_id, plan_target_online, incident_start')
       .in('site_id', chunk);
     if (error) {
       annFetchErr = error;
@@ -258,26 +259,63 @@ export async function mergeTSVToSupabase(
   if (annFetchErr) {
     console.error('[mergeTSVToSupabase] Plan TO fetch error:', annFetchErr);
   } else {
-    const annPlanMap = new Map<string, string | null>(
-      existingAnns.map((a) => [a.site_id, a.plan_target_online]),
+    const annMap = new Map<string, { plan: string | null; incident: string | null }>(
+      existingAnns.map((a) => [
+        a.site_id,
+        { plan: a.plan_target_online, incident: a.incident_start },
+      ]),
     );
 
-    const toSnapshot = records.filter((r) => {
-      if (!r.siteId) return false; // tanpa site_id → tak bisa di-key, skip
-      if (!r.targetOnline) return false; // TSV target kosong → skip
-      const existingPlan = annPlanMap.get(r.siteId);
-      return existingPlan == null || existingPlan === '';
-    });
+    // Satu record representatif per site (prioritas OPEN), supaya tidak dobel.
+    const bySite = new Map<string, (typeof records)[number]>();
+    for (const r of records) {
+      if (!r.siteId) continue;
+      const cur = bySite.get(r.siteId);
+      if (!cur || (r.status === 'OPEN' && cur.status !== 'OPEN')) {
+        bySite.set(r.siteId, r);
+      }
+    }
 
-    if (toSnapshot.length > 0) {
-      const snapshotData = toSnapshot.map((r) => ({
-        site_id: r.siteId,
-        ticket_id: r.ticketId,
-        plan_target_online: r.targetOnline,
-      }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const upserts: any[] = [];
+    for (const r of bySite.values()) {
+      const existing = annMap.get(r.siteId);
+      const incidentChanged = !existing || existing.incident !== (r.dateStart || null);
+
+      if (!existing) {
+        // Belum ada anotasi → snapshot awal (kalau ada target).
+        if (r.targetOnline) {
+          upserts.push({
+            site_id: r.siteId,
+            ticket_id: r.ticketId,
+            incident_start: r.dateStart || null,
+            plan_target_online: r.targetOnline,
+          });
+        }
+      } else if (incidentChanged) {
+        // Insiden baru (date_start berubah) atau legacy NULL → RESET anotasi:
+        // re-snapshot plan dari target tiket baru, kosongkan field manual.
+        upserts.push({
+          site_id: r.siteId,
+          ticket_id: r.ticketId,
+          incident_start: r.dateStart || null,
+          plan_target_online: r.targetOnline || null,
+          is_plan_target_online_edited: false,
+          problem_analisa: null,
+          is_problem_edited: false,
+          action: null,
+          is_action_edited: false,
+          kendala: null,
+          is_kendala_edited: false,
+        });
+      }
+      // incident sama → biarkan (jangan timpa edit manual).
+    }
+
+    if (upserts.length > 0) {
       const { error: snapshotErr } = await annDb
         .from('rtgs_annotations')
-        .upsert(snapshotData, { onConflict: 'site_id' });
+        .upsert(upserts, { onConflict: 'site_id' });
       if (snapshotErr) {
         // Non-fatal: sync TT records sudah sukses, snapshot bisa retry next sync.
         console.error('[mergeTSVToSupabase] Plan TO snapshot error:', snapshotErr);

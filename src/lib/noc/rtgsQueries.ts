@@ -12,6 +12,12 @@ export interface RTGSAnnotation {
   id: string;
   /** Kunci stabil per site fisik. Anotasi persist lintas reissue tiket. */
   site_id: string | null;
+  /**
+   * Tanggal mulai down (date_start) insiden saat anotasi dibuat.
+   * Dipakai membedakan insiden: tetap sama selama reissue (masih down),
+   * berubah saat insiden baru → anotasi insiden lama tidak ikut tampil/persist.
+   */
+  incident_start: string | null;
   /** Tiket terakhir yang menyentuh anotasi ini — referensi saja, bukan kunci. */
   ticket_id: string;
   problem_analisa: string | null;
@@ -140,7 +146,7 @@ export async function upsertAnnotation(
       .maybeSingle(),
     db
       .from('tt_records')
-      .select('target_online_original')
+      .select('target_online_original, date_start')
       .eq('ticket_id', ticketId)
       .maybeSingle(),
   ]);
@@ -149,33 +155,53 @@ export async function upsertAnnotation(
   if (fetchErr) throw fetchErr;
 
   const ttRecord = ttResult.data as
-    | { target_online_original: string | null }
+    | { target_online_original: string | null; date_start: string | null }
     | null;
+
+  const incidentStart = ttRecord?.date_start ?? null;
+  // Insiden baru = anotasi existing punya incident_start beda dari tiket sekarang
+  // (site sempat pulih lalu down lagi). Jangan bawa field insiden lama.
+  const isNewIncident =
+    !!existing && existing.incident_start !== incidentStart;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateData: any = {
     site_id: siteId,
     ticket_id: ticketId,
+    incident_start: incidentStart,
     [field]: value,
     [FIELD_FLAG_MAP[field]]: true,
   };
 
-  if (existing) {
+  if (existing && !isNewIncident) {
+    // Insiden sama → preserve field lain dari row existing.
     for (const otherField of ALL_FIELDS) {
       if (otherField === field) continue;
       updateData[otherField] = existing[otherField];
       const flagCol = FIELD_FLAG_MAP[otherField];
       updateData[flagCol] = existing[flagCol];
     }
+  } else if (isNewIncident) {
+    // Insiden baru → reset semua field lain ke default (null + flag false).
+    for (const otherField of ALL_FIELDS) {
+      if (otherField === field) continue;
+      updateData[otherField] = null;
+      updateData[FIELD_FLAG_MAP[otherField]] = false;
+    }
   }
 
-  // Auto-snapshot plan_target_online dari TT record kalau annotation belum
-  // punya. Tidak overwrite manual edit (cek is_plan_target_online_edited dulu).
+  // Auto-snapshot plan_target_online dari TT record. Untuk insiden baru selalu
+  // re-snapshot; untuk insiden sama hanya kalau belum ada & belum diedit manual.
   if (field !== 'plan_target_online' && ttRecord?.target_online_original) {
-    const existingPlan = existing?.plan_target_online;
-    const existingPlanFlag = existing?.is_plan_target_online_edited;
-    if (!existingPlanFlag && (existingPlan == null || existingPlan === '')) {
+    if (isNewIncident) {
       updateData.plan_target_online = ttRecord.target_online_original;
+      updateData.is_plan_target_online_edited = false;
+    } else {
+      const existingPlan = existing?.plan_target_online;
+      const existingPlanFlag = existing?.is_plan_target_online_edited;
+      if (!existingPlanFlag && (existingPlan == null || existingPlan === '')) {
+        updateData.plan_target_online = ttRecord.target_online_original;
+      }
     }
   }
 
@@ -251,17 +277,37 @@ export function getEffectiveKendala(annotation: RTGSAnnotation | null): string {
   return '-';
 }
 
+/** Parse tanggal RTGS "dd/mm/yy" → epoch ms. null kalau format tak cocok. */
+function parseRtgsDate(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec(s.trim());
+  if (!m) return null;
+  return new Date(2000 + Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+}
+
 /**
- * Compute effective Plan Target Online.
- * Sumber bisa snapshot otomatis (saat sync TSV pertama) atau manual edit.
- * Helper ini tidak peduli sumbernya — cukup return apapun yang ada di kolom.
- * Flag `is_plan_target_online_edited` hanya untuk visual indicator manual edit.
+ * Compute effective Plan Target Online (kolom "Plan" = snapshot beku per insiden).
+ * - Pakai snapshot dari annotation (annotation sudah di-gate per insiden oleh
+ *   pemanggil: kirim null kalau insiden tidak cocok).
+ * - Safeguard: kalau snapshot mendahului tanggal down (date_start) → mustahil
+ *   utk insiden ini (target online selalu ≥ tanggal down) → snapshot basi,
+ *   fallback ke target tiket terkini.
+ * - Tanpa snapshot (insiden baru) → pakai target_online_original tiket sbg plan awal.
+ * Catatan: kolom "Update Target Online" terpisah & selalu live dari tiket.
  */
 export function getEffectivePlanTargetOnline(
   annotation: RTGSAnnotation | null,
+  record?: Pick<TTRecordDB, 'date_start' | 'target_online_original'> | null,
 ): string {
-  if (annotation?.plan_target_online) {
-    return annotation.plan_target_online;
+  const plan = annotation?.plan_target_online;
+  if (plan) {
+    const planMs = parseRtgsDate(plan);
+    const downMs = parseRtgsDate(record?.date_start);
+    if (planMs !== null && downMs !== null && planMs < downMs) {
+      // snapshot basi (mendahului down) → pakai target tiket terkini
+      return record?.target_online_original ?? '-';
+    }
+    return plan;
   }
-  return '-';
+  return record?.target_online_original ?? '-';
 }

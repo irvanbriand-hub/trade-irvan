@@ -330,7 +330,7 @@ function MobileTicketCard({
   const problem = getEffectiveProblem(record, annotation);
   const action = getEffectiveAction(annotation);
   const kendala = getEffectiveKendala(annotation);
-  const planTarget = getEffectivePlanTargetOnline(annotation);
+  const planTarget = getEffectivePlanTargetOnline(annotation, record);
   const updateTarget = formatTargetDateInline(pickTargetOnline(record));
 
   const isProblemEdited = annotation?.is_problem_edited ?? false;
@@ -737,10 +737,16 @@ export default function NOCRtgs() {
           {/* Mobile / Tablet — card stack */}
           <div className="lg:hidden space-y-3">
             {records.map((record, idx) => {
-              const annotation =
+              const annotationRaw =
                 (record.site_id
                   ? annotations.find((a) => a.site_id === record.site_id)
                   : null) ?? null;
+              // Gate per insiden (lihat tabel desktop): incident_start harus
+              // cocok date_start tiket sekarang, kalau tidak anotasi diabaikan.
+              const annotation =
+                annotationRaw && annotationRaw.incident_start === record.date_start
+                  ? annotationRaw
+                  : null;
               const isPreview = isPreviewRow(record);
               const isExternal = record.down_time >= 10;
               const isWillBeExternal = record.down_time === 9;
@@ -786,10 +792,16 @@ export default function NOCRtgs() {
             </thead>
             <tbody>
               {records.map((record, idx) => {
-                const annotation =
+                const annotationRaw =
                   (record.site_id
                     ? annotations.find((a) => a.site_id === record.site_id)
                     : null) ?? null;
+                // Gate per insiden: anotasi hanya berlaku kalau incident_start
+                // cocok dengan date_start tiket sekarang (insiden lama → diabaikan).
+                const annotation =
+                  annotationRaw && annotationRaw.incident_start === record.date_start
+                    ? annotationRaw
+                    : null;
                 const problem = getEffectiveProblem(record, annotation);
                 const action = getEffectiveAction(annotation);
                 const isProblemEdited = annotation?.is_problem_edited ?? false;
@@ -975,7 +987,7 @@ export default function NOCRtgs() {
                     />
 
                     <EditableCell
-                      value={getEffectivePlanTargetOnline(annotation)}
+                      value={getEffectivePlanTargetOnline(annotation, record)}
                       isEdited={isPlanTargetEdited}
                       isEditing={isPlanTargetEditing}
                       onEditStart={() =>

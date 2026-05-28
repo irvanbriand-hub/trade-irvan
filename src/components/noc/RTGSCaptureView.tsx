@@ -165,10 +165,16 @@ export function RTGSCaptureView({
           </thead>
           <tbody>
             {records.map((record, idx) => {
-              const annotation =
+              const annotationRaw =
                 (record.site_id
                   ? annotationBySite.get(record.site_id)
                   : null) ?? null;
+              // Gate per insiden: anotasi insiden lama diabaikan (incident_start
+              // harus cocok date_start tiket sekarang).
+              const annotation =
+                annotationRaw && annotationRaw.incident_start === record.date_start
+                  ? annotationRaw
+                  : null;
               const problem = getEffectiveProblem(record, annotation);
               const action = getEffectiveAction(annotation);
               const bg = idx % 2 === 0 ? '#ffffff' : '#fafafa';
@@ -199,7 +205,7 @@ export function RTGSCaptureView({
                   {!isExternal && (
                     <td style={{ ...tdBase, textAlign: 'center' }}>
                       {formatTargetDate(
-                        getEffectivePlanTargetOnline(annotation),
+                        getEffectivePlanTargetOnline(annotation, record),
                       )}
                     </td>
                   )}
