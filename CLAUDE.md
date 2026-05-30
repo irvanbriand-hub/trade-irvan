@@ -480,6 +480,14 @@ npm run test
 - **Urutan migrations** di `supabase/migrations/` — jangan diubah atau dihapus. Tambah migration baru jika perlu mengubah schema.
 - **RLS policies** — semua tabel punya RLS. Jangan disable RLS atau ubah policy tanpa audit keamanan.
 - **Unique constraints** pada `ak_broker_data` dan `ak_broker_scores` — dipakai untuk UPSERT logic. Jika diubah, semua import data AK Tracker akan rusak.
+- **GRANT eksplisit untuk tabel baru (WAJIB mulai 30 Okt 2026).** Supabase menghentikan auto-grant ke role `anon`/`authenticated`/`service_role`. Setiap migration `create table` baru harus include grant manual, kalau tidak supabase-js akan kena "permission denied". Tabel existing tidak perlu diubah. Template wajib untuk setiap CREATE TABLE baru:
+  ```sql
+  -- setelah CREATE TABLE + enable rls + policies
+  grant select, insert, update, delete on public.<nama_tabel> to authenticated;
+  grant select, insert, update, delete on public.<nama_tabel> to service_role;
+  -- tambah `to anon` HANYA kalau tabel memang perlu publicly readable tanpa login
+  ```
+  Untuk materialized view dan sequence, GRANT memang sudah selalu wajib (lihat pola di [20260425000000_create_noc_perf_tables.sql](supabase/migrations/20260425000000_create_noc_perf_tables.sql)).
 
 ### UI & Komponen
 - **`components/ui/`** — ShadCN UI components. Jangan edit manual; update via `npx shadcn-ui@latest add <component>`.
