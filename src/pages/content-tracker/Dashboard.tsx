@@ -112,7 +112,13 @@ export default function ContentDashboard() {
                   <span className="text-sm font-semibold tabular-nums whitespace-nowrap">
                     {format(new Date(s.scheduled_at), "dd MMM HH:mm", { locale: idLocale })}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{s.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {s.title?.trim() || (
+                      <span className="text-muted-foreground italic">
+                        (tanpa tema){s.content_pages?.name ? ` · ${s.content_pages.name}` : ""}
+                      </span>
+                    )}
+                  </span>
                   {s.content_pages && (
                     <PageBadge platform={s.content_pages.platform} name={s.content_pages.name} color={s.content_pages.color} />
                   )}

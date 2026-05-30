@@ -99,22 +99,22 @@ export function SlotFormDialog({ open, onOpenChange, slot, defaultPageId, defaul
   const submitting = createOne.isPending || createMany.isPending || update.isPending;
 
   const handleSubmit = async () => {
-    if (!title.trim()) return toast({ title: "Judul/tema wajib diisi", variant: "destructive" });
     if (!dateStr) return toast({ title: "Tanggal wajib diisi", variant: "destructive" });
     const scheduled_at = dateAtHour(dateStr, hour).toISOString();
+    const cleanTitle = title.trim();
 
     try {
       if (isEdit && slot) {
-        await update.mutateAsync({ id: slot.id, page_id: pageId, scheduled_at, title: title.trim(), notes: notes.trim() || null });
+        await update.mutateAsync({ id: slot.id, page_id: pageId, scheduled_at, title: cleanTitle, notes: notes.trim() || null });
         toast({ title: "Slot diperbarui" });
       } else if (isMulti) {
         const ids = Array.from(selectedIds);
         if (ids.length === 0) return toast({ title: "Pilih minimal satu channel", variant: "destructive" });
-        const res = await createMany.mutateAsync({ pageIds: ids, scheduled_at, title: title.trim(), notes: notes.trim() || null });
+        const res = await createMany.mutateAsync({ pageIds: ids, scheduled_at, title: cleanTitle, notes: notes.trim() || null });
         toast({ title: `${res.count} slot dibuat (${brand})` });
       } else {
         if (!pageId) return toast({ title: "Pilih channel dulu", variant: "destructive" });
-        await createOne.mutateAsync({ page_id: pageId, scheduled_at, title: title.trim(), notes: notes.trim() || null });
+        await createOne.mutateAsync({ page_id: pageId, scheduled_at, title: cleanTitle, notes: notes.trim() || null });
         toast({ title: "Slot dibuat" });
       }
       onOpenChange(false);
@@ -131,7 +131,7 @@ export function SlotFormDialog({ open, onOpenChange, slot, defaultPageId, defaul
           <DialogDescription>
             {isMulti
               ? "Pilih brand, lalu ceklist channel mana saja yang akan diposting (1 konten sekaligus)."
-              : "Jadwal posting konten manual. Judul/tema wajib diisi."}
+              : "Jadwal posting konten manual. Tema/judul opsional — boleh dikosongkan."}
           </DialogDescription>
         </DialogHeader>
 
@@ -187,8 +187,8 @@ export function SlotFormDialog({ open, onOpenChange, slot, defaultPageId, defaul
           </div>
 
           <div className="space-y-1.5">
-            <Label>Judul / Tema <span className="text-rose-500">*</span></Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="mis. Tutorial transform kayu" />
+            <Label>Tema / Judul <span className="text-muted-foreground text-xs">(opsional)</span></Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="kosongkan kalau tidak perlu" />
           </div>
 
           <div className="space-y-1.5">

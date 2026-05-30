@@ -150,6 +150,38 @@ export function useCreateSchedules() {
   });
 }
 
+// Insert banyak slot dengan scheduled_at/title/notes BERBEDA per item.
+// Berbeda dari useCreateSchedules (yang share scheduled_at) — dipakai untuk
+// mass-input multi-row (plan mingguan dengan banyak post variasi).
+export function useCreateScheduleBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: Array<{
+      page_id: string;
+      scheduled_at: string;
+      title: string;
+      notes?: string | null;
+    }>) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+      if (items.length === 0) throw new Error("Tidak ada baris untuk disimpan.");
+      const batchId = crypto.randomUUID();
+      const rows: ContentScheduleInsert[] = items.map((it) => ({
+        user_id: user.id,
+        page_id: it.page_id,
+        scheduled_at: it.scheduled_at,
+        title: it.title,
+        notes: it.notes ?? null,
+        bulk_batch_id: batchId,
+      }));
+      const { error } = await supabase.from("content_schedules").insert(rows);
+      if (error) throw error;
+      return { count: rows.length, batchId };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["content_schedules"] }),
+  });
+}
+
 export function useUpdateSchedule() {
   const qc = useQueryClient();
   return useMutation({

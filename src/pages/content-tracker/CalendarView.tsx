@@ -4,17 +4,20 @@ import {
   addMonths, subMonths, format, isSameDay,
 } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { toast } from "@/hooks/use-toast";
 import { CalendarDayCell } from "@/components/content-tracker/CalendarDayCell";
 import { SlotRow } from "@/components/content-tracker/SlotRow";
 import { SlotFormDialog } from "@/components/content-tracker/SlotFormDialog";
 import { PageSelect } from "@/components/content-tracker/PageSelect";
-import { useContentSchedules, type ContentScheduleWithPage } from "@/hooks/useContentSchedules";
+import { useContentSchedules, useBulkSetStatus, type ContentScheduleWithPage } from "@/hooks/useContentSchedules";
 import { useContentPages } from "@/hooks/useContentPages";
 
 const WEEKDAYS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"];
+// Index 0..6 di WEEKDAYS sesuai weekStartsOn=1: indeks 5=Sab, 6=Min jadi weekend.
+const WEEKEND_IDX = new Set([5, 6]);
 
 export default function ContentCalendarView() {
   const [cursor, setCursor] = useState(new Date());
@@ -25,6 +28,7 @@ export default function ContentCalendarView() {
   const [editSlot, setEditSlot] = useState<ContentScheduleWithPage | null>(null);
 
   const { data: pages } = useContentPages();
+  const bulkStatus = useBulkSetStatus();
 
   const gridStart = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 });
   const gridEnd = endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 });
@@ -44,6 +48,24 @@ export default function ContentCalendarView() {
   const openDay = (d: Date) => {
     setSelectedDay(d);
     setDayOpen(true);
+  };
+
+  const pendingDaySlots = useMemo(
+    () => daySlots.filter((s) => s.status !== "posted"),
+    [daySlots],
+  );
+
+  const markAllDone = async () => {
+    if (pendingDaySlots.length === 0) return;
+    try {
+      await bulkStatus.mutateAsync({
+        ids: pendingDaySlots.map((s) => s.id),
+        status: "posted",
+      });
+      toast({ title: `${pendingDaySlots.length} post ditandai Posted` });
+    } catch (e) {
+      toast({ title: "Gagal update", description: (e as Error).message, variant: "destructive" });
+    }
   };
 
   return (
@@ -74,7 +96,9 @@ export default function ContentCalendarView() {
 
       {/* Weekday header */}
       <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium text-muted-foreground">
-        {WEEKDAYS.map((d) => <div key={d}>{d}</div>)}
+        {WEEKDAYS.map((d, i) => (
+          <div key={d} className={WEEKEND_IDX.has(i) ? "text-rose-500" : ""}>{d}</div>
+        ))}
       </div>
 
       {/* Grid */}
@@ -99,6 +123,16 @@ export default function ContentCalendarView() {
             </SheetTitle>
           </SheetHeader>
           <div className="mt-4 space-y-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="w-full gap-1.5"
+              onClick={markAllDone}
+              disabled={bulkStatus.isPending || pendingDaySlots.length === 0}
+            >
+              <CheckCheck className="h-4 w-4" />
+              Tandai Semua DONE {pendingDaySlots.length > 0 ? `(${pendingDaySlots.length})` : ""}
+            </Button>
             <Button
               size="sm"
               variant="outline"

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Routes, Route, Navigate, NavLink, useLocation } from "react-router-dom";
-import { Plus, CalendarPlus } from "lucide-react";
+import { Plus, CalendarPlus, ListPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ToastAction } from "@/components/ui/toast";
 import { SlotFormDialog } from "@/components/content-tracker/SlotFormDialog";
 import { BulkScheduleDialog } from "@/components/content-tracker/BulkScheduleDialog";
+import { BulkAddRowsDialog } from "@/components/content-tracker/BulkAddRowsDialog";
 import { toast } from "@/hooks/use-toast";
 import { useBulkDeleteSchedules } from "@/hooks/useContentSchedules";
 import ContentDashboard from "./Dashboard";
@@ -51,6 +52,7 @@ function Tabs() {
 export default function ContentTrackerLayout() {
   const [slotOpen, setSlotOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkRowsOpen, setBulkRowsOpen] = useState(false);
   const bulkDelete = useBulkDeleteSchedules();
 
   // Undo batch terakhir hasil generate
@@ -78,7 +80,12 @@ export default function ContentTrackerLayout() {
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setBulkOpen(true)}>
             <CalendarPlus className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Generate Massal</span>
-            <span className="sm:hidden">Massal</span>
+            <span className="sm:hidden">Generate</span>
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setBulkRowsOpen(true)}>
+            <ListPlus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Plan Mingguan</span>
+            <span className="sm:hidden">Plan</span>
           </Button>
           <Button size="sm" className="gap-1.5" onClick={() => setSlotOpen(true)}>
             <Plus className="h-3.5 w-3.5" />
@@ -104,6 +111,21 @@ export default function ContentTrackerLayout() {
       </div>
 
       <SlotFormDialog open={slotOpen} onOpenChange={setSlotOpen} multi />
+      <BulkAddRowsDialog
+        open={bulkRowsOpen}
+        onOpenChange={setBulkRowsOpen}
+        onCreated={(batchId, count) => {
+          toast({
+            title: `${count} slot dibuat`,
+            description: "Batalkan batch ini bila keliru.",
+            action: (
+              <ToastAction altText="Urungkan" onClick={() => undoBatch(batchId)}>
+                Urungkan
+              </ToastAction>
+            ),
+          });
+        }}
+      />
       <BulkScheduleDialog
         open={bulkOpen}
         onOpenChange={setBulkOpen}

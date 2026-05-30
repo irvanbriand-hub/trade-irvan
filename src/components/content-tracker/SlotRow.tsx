@@ -60,7 +60,9 @@ export function SlotRow({ slot, selected, onToggleSelect, onEdit, showDate }: Sl
           </span>
           <StatusBadge status={status} />
         </div>
-        <div className="mt-1 text-sm text-foreground break-words">{slot.title}</div>
+        {slot.title?.trim() && (
+          <div className="mt-1 text-sm text-foreground break-words">{slot.title}</div>
+        )}
         <div className="mt-1 flex items-center gap-2 flex-wrap">
           {slot.content_pages && (
             <PageBadge platform={slot.content_pages.platform} name={slot.content_pages.name} color={slot.content_pages.color} />

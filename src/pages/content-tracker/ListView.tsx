@@ -52,7 +52,7 @@ export default function ContentListView() {
     if (status !== "all") rows = rows.filter((r) => deriveStatus(r) === status);
     if (search.trim()) {
       const q = search.toLowerCase();
-      rows = rows.filter((r) => r.title.toLowerCase().includes(q) || (r.notes ?? "").toLowerCase().includes(q));
+      rows = rows.filter((r) => (r.title ?? "").toLowerCase().includes(q) || (r.notes ?? "").toLowerCase().includes(q));
     }
     return rows;
   }, [slots, platform, status, search]);
