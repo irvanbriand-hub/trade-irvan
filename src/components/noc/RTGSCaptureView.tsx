@@ -6,13 +6,16 @@ import {
   getEffectivePlanTargetOnline,
   type RTGSAnnotation,
 } from '@/lib/noc/rtgsQueries';
-import type { TTRecordDB } from '@/lib/noc/types';
+import type { PO, TTRecordDB } from '@/lib/noc/types';
+import { getPO } from '@/lib/noc/classifiers';
 
 export type RTGSCaptureVariant = 'internal' | 'external';
 
 interface RTGSCaptureViewProps {
   records: TTRecordDB[];
   annotations: RTGSAnnotation[];
+  /** Daftar PO aktif — dipakai derive nama PO per lokasi (by kabupaten→provinsi). */
+  poList: PO[];
   /** Tanggal & jam yang di-render di header (WIB). */
   dateLabel: string; // 'DD/MM/YYYY'
   timeLabel: string; // 'HH:mm'
@@ -53,6 +56,13 @@ function pickTargetOnline(record: TTRecordDB): string {
   return record.target_online_original ?? '';
 }
 
+/** Nama PO penanggung jawab lokasi (by kabupaten→provinsi). '-' kalau tak ada. */
+function resolvePOName(record: TTRecordDB, poList: PO[]): string {
+  return (
+    getPO(record.provinsi ?? '', record.kabupaten ?? '', poList)?.name ?? '-'
+  );
+}
+
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
 const thStyle: React.CSSProperties = {
@@ -82,6 +92,7 @@ const tdBase: React.CSSProperties = {
 export function RTGSCaptureView({
   records,
   annotations,
+  poList,
   dateLabel,
   timeLabel,
   variant = 'internal',
@@ -142,6 +153,7 @@ export function RTGSCaptureView({
             <col style={{ width: '175px' }} />  {/* SiteID — cukup untuk 17-18 char */}
             <col style={{ width: 'auto' }} />   {/* Nama Lokasi */}
             <col style={{ width: '160px' }} />  {/* Provinsi */}
+            {!isExternal && <col style={{ width: '110px' }} />}  {/* PO */}
             <col style={{ width: '90px' }} />   {/* Umur Tiket */}
             <col style={{ width: 'auto' }} />   {/* Problem Analisa */}
             {!isExternal && <col style={{ width: 'auto' }} />}   {/* Action */}
@@ -155,6 +167,7 @@ export function RTGSCaptureView({
               <th style={thStyle}>SiteID</th>
               <th style={thStyle}>Nama Lokasi</th>
               <th style={thStyle}>Provinsi</th>
+              {!isExternal && <th style={thStyle}>PO</th>}
               <th style={thStyle}>Umur Tiket (hari)</th>
               <th style={thStyle}>Problem Hasil Analisa</th>
               {!isExternal && <th style={thStyle}>Action</th>}
@@ -196,6 +209,9 @@ export function RTGSCaptureView({
                   </td>
                   <td style={tdBase}>{record.site_name}</td>
                   <td style={tdBase}>{record.provinsi ?? '-'}</td>
+                  {!isExternal && (
+                    <td style={tdBase}>{resolvePOName(record, poList)}</td>
+                  )}
                   <td style={{ ...tdBase, textAlign: 'center', fontWeight: 600 }}>
                     {record.down_time}
                   </td>

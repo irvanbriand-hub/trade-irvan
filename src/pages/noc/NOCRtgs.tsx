@@ -16,9 +16,11 @@ import {
   type RTGSAnnotation,
   type RTGSField,
 } from '@/lib/noc/rtgsQueries';
-import type { TTRecordDB } from '@/lib/noc/types';
+import type { PO, TTRecordDB } from '@/lib/noc/types';
 import { RTGSCaptureView } from '@/components/noc/RTGSCaptureView';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
+import { usePOList } from '@/lib/noc/hooks/usePOList';
+import { getPO } from '@/lib/noc/classifiers';
 
 // ─── Date helpers (WIB) ──────────────────────────────────────────────────────
 
@@ -62,6 +64,13 @@ function pickTargetOnline(record: TTRecordDB): string {
     return record.target_online_edited;
   }
   return record.target_online_original ?? '';
+}
+
+/** Nama PO penanggung jawab lokasi (by kabupaten→provinsi). '-' kalau tak ada. */
+function resolvePOName(record: TTRecordDB, poList: PO[]): string {
+  return (
+    getPO(record.provinsi ?? '', record.kabupaten ?? '', poList)?.name ?? '-'
+  );
 }
 
 // ─── Editable Cell ───────────────────────────────────────────────────────────
@@ -303,6 +312,7 @@ function MobileEditableField({
 interface MobileTicketCardProps {
   record: TTRecordDB;
   annotation: RTGSAnnotation | null;
+  poName: string;
   index: number;
   isPreview: boolean;
   isWillBeExternal: boolean;
@@ -317,6 +327,7 @@ interface MobileTicketCardProps {
 function MobileTicketCard({
   record,
   annotation,
+  poName,
   index,
   isPreview,
   isWillBeExternal,
@@ -401,6 +412,10 @@ function MobileTicketCard({
             <span>{record.provinsi ?? '-'}</span>
             <span>·</span>
             <span>
+              PO: <strong className="text-foreground">{poName}</strong>
+            </span>
+            <span>·</span>
+            <span>
               Umur: <strong className="text-foreground">{record.down_time}</strong> hari
             </span>
           </div>
@@ -483,6 +498,7 @@ function MobileTicketCard({
 export default function NOCRtgs() {
   const { toast } = useToast();
   const { getSiteNote } = useNOC();
+  const { data: poList = [] } = usePOList();
   const [records, setRecords] = useState<TTRecordDB[]>([]);
   const [annotations, setAnnotations] = useState<RTGSAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -758,6 +774,7 @@ export default function NOCRtgs() {
                   key={record.ticket_id}
                   record={record}
                   annotation={annotation}
+                  poName={resolvePOName(record, poList)}
                   index={idx}
                   isPreview={isPreview}
                   isWillBeExternal={isWillBeExternal}
@@ -781,6 +798,7 @@ export default function NOCRtgs() {
                 <th className="px-2 py-2 w-36 text-left">SiteID</th>
                 <th className="px-2 py-2 text-left">Nama Lokasi</th>
                 <th className="px-2 py-2 w-40 text-left">Provinsi</th>
+                <th className="px-2 py-2 w-28 text-left">PO</th>
                 <th className="px-2 py-2 w-24 text-center">Umur Tiket (hari)</th>
                 <th className="px-2 py-2 text-left">Problem Hasil Analisa</th>
                 <th className="px-2 py-2 text-left">Action</th>
@@ -926,6 +944,11 @@ export default function NOCRtgs() {
                       {record.provinsi ?? '-'}
                     </td>
                     <td
+                      className={cn('px-2 py-2 align-top', middleCellBorders)}
+                    >
+                      {resolvePOName(record, poList)}
+                    </td>
+                    <td
                       className={cn(
                         'px-2 py-2 text-center font-semibold align-top',
                         middleCellBorders,
@@ -1052,6 +1075,7 @@ export default function NOCRtgs() {
         <RTGSCaptureView
           records={internalRecords}
           annotations={annotations}
+          poList={poList}
           dateLabel={dateLabel}
           timeLabel={timeLabel}
           variant="internal"
@@ -1069,6 +1093,7 @@ export default function NOCRtgs() {
         <RTGSCaptureView
           records={externalRecords}
           annotations={annotations}
+          poList={poList}
           dateLabel={dateLabel}
           timeLabel={timeLabel}
           variant="external"

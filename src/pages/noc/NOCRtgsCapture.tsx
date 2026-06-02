@@ -10,6 +10,7 @@ import {
   RTGSCaptureView,
   type RTGSCaptureVariant,
 } from '@/components/noc/RTGSCaptureView';
+import { usePOList } from '@/lib/noc/hooks/usePOList';
 
 // ─── Date helpers (WIB) ──────────────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ export default function NOCRtgsCapture() {
     searchParams.get('variant') === 'external' ? 'external' : 'internal';
   const minAging = variant === 'external' ? 10 : 7;
 
+  const { data: poList = [] } = usePOList();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [records, setRecords] = useState<TTRecordDB[]>([]);
@@ -105,6 +107,7 @@ export default function NOCRtgsCapture() {
     <RTGSCaptureView
       records={records}
       annotations={annotations}
+      poList={poList}
       dateLabel={formatWIBDate()}
       timeLabel={formatWIBTime()}
       variant={variant}

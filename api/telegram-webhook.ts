@@ -181,6 +181,7 @@ interface RtgsTtRow {
   site_id: string | null;
   site_name: string;
   provinsi: string | null;
+  kabupaten: string | null;
   down_time: number;
   detail_prob: string | null;
   date_start: string | null;
@@ -229,6 +230,39 @@ function rtgsPickTargetOnline(rec: RtgsTtRow): string {
   return rec.target_online_original || '';
 }
 
+interface RtgsPoRow {
+  name: string;
+  provinsi_coverage: string[] | null;
+  kabupaten_coverage: string[] | null;
+  status: string | null;
+}
+
+/**
+ * Resolve nama PO penanggung jawab lokasi. Mirror getPO() di
+ * src/lib/noc/classifiers.ts: cek kabupaten_coverage dulu, fallback provinsi.
+ * Khusus NTT (FIRMAN vs NOVAN) bedanya di kabupaten.
+ */
+function rtgsResolvePO(rec: RtgsTtRow, poList: RtgsPoRow[]): string {
+  const prov = (rec.provinsi ?? '').toUpperCase();
+  const kab = (rec.kabupaten ?? '').toUpperCase();
+
+  if (kab) {
+    const byKab = poList.find(
+      (p) =>
+        p.status === 'active' &&
+        (p.kabupaten_coverage ?? []).some((k) => k.toUpperCase() === kab),
+    );
+    if (byKab) return byKab.name;
+  }
+
+  const byProv = poList.find(
+    (p) =>
+      p.status === 'active' &&
+      (p.provinsi_coverage ?? []).some((pr) => pr.toUpperCase() === prov),
+  );
+  return byProv?.name ?? '-';
+}
+
 function rtgsFormatDate(raw: string | null | undefined): string {
   if (!raw) return '-';
   const trimmed = raw.trim();
@@ -268,7 +302,7 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
   const { data: ttsRaw, error: ttsErr } = await supabaseAdmin
     .from('tt_records')
     .select(
-      'ticket_id, site_id, site_name, provinsi, down_time, detail_prob, date_start, target_online_original, target_online_edited, is_manually_edited',
+      'ticket_id, site_id, site_name, provinsi, kabupaten, down_time, detail_prob, date_start, target_online_original, target_online_edited, is_manually_edited',
     )
     .eq('status', 'OPEN')
     .gte('down_time', minAging)
@@ -323,6 +357,13 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
     if (a.site_id) annMap.set(a.site_id, a);
   }
 
+  // Load PO list untuk derive nama PO per lokasi (by kabupaten→provinsi).
+  // Kalau gagal, list tetap jalan dengan PO '-'.
+  const { data: poRaw } = await supabaseAdmin
+    .from('po_list')
+    .select('name, provinsi_coverage, kabupaten_coverage, status');
+  const poList = (poRaw ?? []) as RtgsPoRow[];
+
   const { date: dateLabel, time: timeLabel } = getRtgsWIBLabel();
 
   const items = tickets.map((t, i) => {
@@ -334,6 +375,7 @@ async function handleRtgsList(chatId: string, minAging: number = 7) {
       `${i + 1}. ${t.site_name} — ${t.down_time} hari`,
       `   Site   : ${t.site_id ?? '-'}`,
       `   Prov   : ${t.provinsi ?? '-'}`,
+      `   PO     : ${rtgsResolvePO(t, poList)}`,
       `   Problem: ${rtgsEffectiveProblem(t, ann)}`,
       `   Action : ${rtgsEffectiveAction(ann)}`,
       `   Kendala: ${rtgsEffectiveKendala(ann)}`,
