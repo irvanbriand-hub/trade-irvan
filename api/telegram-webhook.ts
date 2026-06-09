@@ -183,8 +183,11 @@ async function buildDirumaHtbExcel(
   dateLabel: string,
   timeLabel: string,
 ): Promise<{ buffer: Buffer; htbCount: number }> {
+  // xlsx-js-style = CommonJS → di Node/Vercel export-nya ada di .default
+  // (XLSX.utils undefined kalau pakai namespace langsung).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const XLSX: any = await import('xlsx-js-style');
+  const mod: any = await import('xlsx-js-style');
+  const XLSX: any = mod.default ?? mod;
 
   const [ds, ed, ov] = await Promise.all([
     supabaseAdmin
