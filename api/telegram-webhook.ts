@@ -30,11 +30,36 @@ async function sendTelegramMessage(
   });
 }
 
-async function sendTelegramPhoto(chatId: string, photo: Buffer, filename: string = 'recap.png') {
+async function sendTelegramPhoto(
+  chatId: string,
+  photo: Buffer,
+  filename: string = 'recap.png',
+  caption?: string,
+) {
   const formData = new FormData();
   formData.append('chat_id', chatId);
   formData.append('photo', new Blob([photo], { type: 'image/png' }), filename);
+  if (caption) formData.append('caption', caption);
   await fetch(`${TELEGRAM_API}/sendPhoto`, { method: 'POST', body: formData });
+}
+
+async function sendTelegramDocument(
+  chatId: string,
+  file: Buffer,
+  filename: string,
+  caption?: string,
+) {
+  const formData = new FormData();
+  formData.append('chat_id', chatId);
+  formData.append(
+    'document',
+    new Blob([file], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }),
+    filename,
+  );
+  if (caption) formData.append('caption', caption);
+  await fetch(`${TELEGRAM_API}/sendDocument`, { method: 'POST', body: formData });
 }
 
 const TELEGRAM_MAX_LENGTH = 3800;
@@ -97,7 +122,7 @@ async function sendTelegramChunks(
 async function sendCaptureToTelegram(
   chatId: string,
   url: string,
-  opts: { filename?: string; waitSelector?: string } = {},
+  opts: { filename?: string; waitSelector?: string; caption?: string } = {},
 ) {
   const filename = opts.filename ?? 'recap.png';
   const waitSelector = opts.waitSelector ?? '#capture-ready';
@@ -123,13 +148,171 @@ async function sendCaptureToTelegram(
     if (!element) throw new Error(`${waitSelector} element not found`);
 
     const screenshot = await element.screenshot({ type: 'png' });
-    await sendTelegramPhoto(chatId, Buffer.from(screenshot), filename);
+    await sendTelegramPhoto(
+      chatId,
+      Buffer.from(screenshot),
+      filename,
+      opts.caption,
+    );
   } catch (err: any) {
     console.error('[sendCaptureToTelegram] error:', err);
     await sendTelegramMessage(chatId, `❌ Gagal generate capture: ${err.message}`);
   } finally {
     if (browser) await (browser as any).close();
   }
+}
+
+// ─── UBIQU DIRUMA: build styled HTB Excel server-side (for /diruma) ──────────
+
+const HTB_HEADERS = [
+  'No',
+  'No Tiket',
+  'Site ID',
+  'Nama Lokasi',
+  'Provinsi',
+  'Umur Tiket (Hari)',
+  'Progress Spare',
+  'Progress Teknisi',
+  'No MRQ',
+  'RESI',
+  'MOD',
+  'MOS',
+];
+
+async function buildDirumaHtbExcel(
+  dateLabel: string,
+  timeLabel: string,
+): Promise<{ buffer: Buffer; htbCount: number }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const XLSX: any = await import('xlsx-js-style');
+
+  const [ds, ed, ov] = await Promise.all([
+    supabaseAdmin
+      .from('ud_dataset')
+      .select('*')
+      .order('dur_days', { ascending: false }),
+    supabaseAdmin.from('ud_edits').select('*'),
+    supabaseAdmin.from('ud_htb_override').select('ticket_id'),
+  ]);
+  if (ds.error) throw new Error(ds.error.message);
+
+  const rows: any[] = ds.data ?? [];
+  const edits: any[] = ed.data ?? [];
+  const overrideSet = new Set(
+    (ov.data ?? []).map((r: any) => r.ticket_id as string),
+  );
+  const editById = new Map<string, any>();
+  for (const e of edits) editById.set(e.ticket_id, e);
+
+  // Efektif HTB = htb_label HTB ATAU di-override.
+  const htbRows = rows.filter(
+    (r) => r.htb_label === 'HTB' || overrideSet.has(r.ticket_id),
+  );
+
+  const aoa: (string | number)[][] = [];
+  aoa.push([]);
+  aoa.push([
+    `Tiket Ubiqu Diruma yang membutuhkan spare HTB-A dan HTB-B, Update : ${dateLabel}, Jam ${timeLabel} WIB`,
+  ]);
+  aoa.push([]);
+  aoa.push([...HTB_HEADERS]);
+  htbRows.forEach((row, idx) => {
+    const e = editById.get(row.ticket_id);
+    const progressTeknisi =
+      e?.is_progress_teknisi_edited && e.progress_teknisi_edited
+        ? e.progress_teknisi_edited
+        : '';
+    aoa.push([
+      idx + 1,
+      row.ticket_number ?? '',
+      row.site_id ?? '',
+      row.site_name ?? '',
+      row.province ?? '',
+      row.dur_days ?? 0,
+      '',
+      progressTeknisi,
+      '',
+      '',
+      '',
+      '',
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const NCOL = HTB_HEADERS.length;
+  const HEADER_R = 3;
+  const lastDataR = HEADER_R + htbRows.length;
+
+  ws['!cols'] = [
+    { wch: 4 },
+    { wch: 38 },
+    { wch: 13 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 9 },
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 26 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 12 },
+  ];
+  ws['!merges'] = [{ s: { r: 1, c: 0 }, e: { r: 1, c: NCOL - 1 } }];
+  ws['!rows'] = [];
+  ws['!rows'][1] = { hpt: 22 };
+  ws['!rows'][HEADER_R] = { hpt: 30 };
+  ws['!autofilter'] = {
+    ref: `${XLSX.utils.encode_cell({ r: HEADER_R, c: 0 })}:${XLSX.utils.encode_cell(
+      { r: HEADER_R, c: NCOL - 1 },
+    )}`,
+  };
+  ws['!freeze'] = {
+    xSplit: 0,
+    ySplit: HEADER_R + 1,
+    topLeftCell: `A${HEADER_R + 2}`,
+    activePane: 'bottomLeft',
+    state: 'frozen',
+  };
+
+  const thin = { style: 'thin', color: { rgb: 'BFBFBF' } };
+  const allBorder = { top: thin, bottom: thin, left: thin, right: thin };
+  const setStyle = (r: number, c: number, s: Record<string, unknown>) => {
+    const addr = XLSX.utils.encode_cell({ r, c });
+    if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+    ws[addr].s = s;
+  };
+
+  setStyle(1, 0, {
+    font: { bold: true, sz: 12, color: { rgb: 'FF0000' } },
+    alignment: { horizontal: 'left', vertical: 'center' },
+  });
+  for (let c = 0; c < NCOL; c++) {
+    setStyle(HEADER_R, c, {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FFFF00' } },
+      font: { bold: true, sz: 11, color: { rgb: '000000' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: allBorder,
+    });
+  }
+  for (let r = HEADER_R + 1; r <= lastDataR; r++) {
+    for (let c = 0; c < NCOL; c++) {
+      const center = c === 0 || c === 5;
+      setStyle(r, c, {
+        font: { sz: 10, color: { rgb: '000000' } },
+        alignment: {
+          horizontal: center ? 'center' : 'left',
+          vertical: 'top',
+          wrapText: true,
+        },
+        border: allBorder,
+      });
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'HTB');
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+  return { buffer: Buffer.from(out), htbCount: htbRows.length };
 }
 
 // ─── RTGS Annotation helpers (for /rtgs-list & /rtgs-edit-* commands) ─────────
@@ -1409,6 +1592,9 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 /rtgs-edit-kendala-N <text> — Edit Kendala untuk #N
 /rtgs-edit-target-N <text> — Edit Plan Target Online untuk #N
 
+*🏠 UBIQU DIRUMA*
+/diruma — PNG top-10 NON-HTB (aging terlama) + Excel HTB (butuh spare HTB-A/HTB-B)
+
 /help — Tampilkan daftar ini`;
 
 async function processCommand(text: string, chatId: string) {
@@ -1625,6 +1811,66 @@ async function processCommand(text: string, chatId: string) {
           waitSelector: '#rtgs-capture-ready',
         },
       );
+      break;
+    }
+
+    case '/diruma': {
+      await sendTelegramMessage(
+        chatId,
+        '⏳ Menyiapkan rekap UBIQU DIRUMA (PNG + Excel)...',
+      );
+
+      const w = getWIBParts(0);
+      const yyyy = w.year;
+      const mm = String(w.month + 1).padStart(2, '0');
+      const dd = String(w.date).padStart(2, '0');
+      const wnow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const hh = String(wnow.getUTCHours()).padStart(2, '0');
+      const mi = String(wnow.getUTCMinutes()).padStart(2, '0');
+      const dateLabel = `${dd}/${mm}/${yyyy}`;
+      const timeLabel = `${hh}:${mi}`;
+      const stamp = `${yyyy}-${mm}-${dd}-${hh}${mi}`;
+
+      // 1) PNG top-10 NON-HTB (aging terlama) + narasi.
+      await sendCaptureToTelegram(
+        chatId,
+        `${APP_URL}/noc/ubiqu-diruma-capture`,
+        {
+          filename: `ubiqu-diruma-nonhtb-${stamp}.png`,
+          waitSelector: '#ubiqu-capture-ready',
+          caption:
+            'Berikut rekap list TT Ubiqu Diruma untuk 10 lokasi dengan usia tiket terlama.',
+        },
+      );
+
+      // 2) Excel HTB (butuh spare HTB-A/HTB-B) + narasi.
+      try {
+        const { buffer, htbCount } = await buildDirumaHtbExcel(
+          dateLabel,
+          timeLabel,
+        );
+        if (htbCount === 0) {
+          await sendTelegramMessage(
+            chatId,
+            'ℹ️ Tidak ada tiket HTB saat ini — Excel tidak dikirim.',
+          );
+        } else {
+          await sendTelegramDocument(
+            chatId,
+            buffer,
+            `diruma_offline_HTB_${dd}${mm}${yyyy}.xlsx`,
+            'Berikut data tiket ubiqu diruma yang membutuhkan spare HTB-A dan HTB-B',
+          );
+        }
+      } catch (err: any) {
+        await sendTelegramMessage(
+          chatId,
+          `❌ Gagal generate Excel HTB: ${err.message}`,
+        );
+      }
+
+      // 3) Penutup.
+      await sendTelegramMessage(chatId, 'Terima kasih', { parseMode: null });
       break;
     }
 

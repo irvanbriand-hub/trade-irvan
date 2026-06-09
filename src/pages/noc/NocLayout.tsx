@@ -28,12 +28,15 @@ import NOCSCurveCapture from './NOCSCurveCapture';
 import NOCSCurveCaptureGrid from './NOCSCurveCaptureGrid';
 import NOCRtgs from './NOCRtgs';
 import NOCRtgsCapture from './NOCRtgsCapture';
+import UbiquDirumaPage from '@/features/ubiqu-diruma/pages/UbiquDirumaPage';
+import UbiquDirumaCapture from './UbiquDirumaCapture';
 
 const tabs = [
   { to: 'dashboard', label: 'Dashboard', icon: '📊' },
   { to: 'recap', label: 'Rekap', icon: '📋' },
   { to: 'scurve', label: 'S-Curve', icon: '📈' },
   { to: 'rtgs', label: 'RTGS', icon: '📌' },
+  { to: 'ubiqu-diruma', label: 'UBIQU', icon: '🏠' },
   { to: 'generate', label: 'Generate', icon: '💬' },
   { to: 'po', label: 'PO', icon: '👤' },
   { to: 'settings', label: 'Settings', icon: '⚙️' },
@@ -135,6 +138,7 @@ function NocInner() {
   const isPOPage = pathname.endsWith('/po');
   const isSettingsPage = pathname.endsWith('/settings');
   const isRtgsPage = pathname.endsWith('/rtgs');
+  const isUbiquPage = pathname.endsWith('/ubiqu-diruma');
 
   return (
     <div className="space-y-4">
@@ -155,8 +159,10 @@ function NocInner() {
         </div>
       </div>
 
-      {/* TSV Uploader — hidden on PO, Settings, dan RTGS page */}
-      {!isPOPage && !isSettingsPage && !isRtgsPage && <TsvUploader />}
+      {/* TSV Uploader — hidden on PO, Settings, RTGS, dan UBIQU page */}
+      {!isPOPage && !isSettingsPage && !isRtgsPage && !isUbiquPage && (
+        <TsvUploader />
+      )}
 
       {/* Tabs */}
       <NocTabs />
@@ -169,6 +175,7 @@ function NocInner() {
           <Route path="recap" element={<NocRecap />} />
           <Route path="scurve" element={<NOCSCurve />} />
           <Route path="rtgs" element={<NOCRtgs />} />
+          <Route path="ubiqu-diruma" element={<UbiquDirumaPage />} />
           <Route path="generate" element={<NocGenerate />} />
           <Route path="po" element={<NocPO />} />
           <Route path="settings" element={<NocSettings />} />
@@ -186,6 +193,7 @@ export default function NocLayout() {
         <Route path="scurve-capture" element={<NOCSCurveCapture />} />
         <Route path="scurve-capture-grid" element={<NOCSCurveCaptureGrid />} />
         <Route path="rtgs-capture" element={<NOCRtgsCapture />} />
+        <Route path="ubiqu-diruma-capture" element={<UbiquDirumaCapture />} />
         <Route path="*" element={<NocInner />} />
       </Routes>
     </NOCProvider>
