@@ -3,10 +3,11 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useLocation } from "react-router-dom";
 import { type ReactNode } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
+import { canAccessTradingApp, isNocOnlyUser } from "@/lib/noc-auth";
 import Dashboard from "./pages/Dashboard";
 import Journal from "./pages/Journal";
 import Portfolio from "./pages/Portfolio";
@@ -44,22 +45,39 @@ function Spinner() {
   );
 }
 
-// Route "/" — redirect ke /dashboard jika sudah login, /noc jika belum
+// Landing default sesuai jenis akun.
+function homeFor(email?: string | null) {
+  return isNocOnlyUser(email) ? "/noc" : "/dashboard";
+}
+
+// Route "/" — arahkan sesuai status & jenis akun. Guest → /login.
 function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) return <Spinner />;
-  if (user) return <Navigate to="/dashboard" replace />;
-  return <Navigate to="/noc" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={homeFor(user.email)} replace />;
 }
 
-// Hanya untuk /login — kalau sudah login, redirect ke ?redirect= (kalau ada) atau /dashboard
+// Hanya untuk /login — kalau sudah login, redirect ke ?redirect= (kalau ada) atau home sesuai akun.
 function PublicOnlyRoute({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const [params] = useSearchParams();
   if (loading) return <Spinner />;
   if (user) {
     const redirect = params.get("redirect");
-    return <Navigate to={redirect || "/dashboard"} replace />;
+    return <Navigate to={redirect || homeFor(user.email)} replace />;
+  }
+  return <>{children}</>;
+}
+
+// Gerbang untuk /noc/* — wajib login (owner atau akun NOC). Belum login → /login?redirect=.
+function RequireAuth({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return <Spinner />;
+  if (!user) {
+    const redirect = encodeURIComponent(location.pathname + location.search);
+    return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
   return <>{children}</>;
 }
@@ -70,6 +88,8 @@ function ProtectedApp() {
 
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
+  // Akun NOC-only tidak boleh masuk route trading — lempar ke /noc.
+  if (!canAccessTradingApp(user.email)) return <Navigate to="/noc" replace />;
 
   return (
     <AppLayout>
@@ -115,8 +135,8 @@ const App = () => (
             {/* Default → /noc jika belum login, /dashboard jika sudah login */}
             <Route path="/" element={<RootRedirect />} />
 
-            {/* PUBLIC: NOC — tidak perlu login */}
-            <Route path="/noc/*" element={<NocLayout />} />
+            {/* NOC — wajib login (owner atau akun NOC team) */}
+            <Route path="/noc/*" element={<RequireAuth><NocLayout /></RequireAuth>} />
 
             {/* PUBLIC: Login — redirect ke /noc jika sudah login */}
             <Route path="/login" element={<PublicOnlyRoute><Auth /></PublicOnlyRoute>} />

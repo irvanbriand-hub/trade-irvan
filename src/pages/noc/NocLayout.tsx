@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Routes, Route, Navigate, NavLink, Link, useLocation } from 'react-router-dom';
-import { Trash2, BarChart3 } from 'lucide-react';
+import { Trash2, BarChart3, LogOut } from 'lucide-react';
 import { NOCProvider } from '@/lib/noc/hooks/useNOC';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
 import { useAuth } from '@/hooks/useAuth';
+import { canAccessTradingApp, displayName } from '@/lib/noc-auth';
 import { TsvUploader } from '@/components/noc/TsvUploader';
 import {
   AlertDialog,
@@ -116,20 +117,34 @@ function ResetDataButton() {
   );
 }
 
+// Tombol Trade Journal — hanya untuk owner (akun NOC-only tidak punya akses).
 function TradeJournalButton() {
   const { user } = useAuth();
+  if (!canAccessTradingApp(user?.email)) return null;
   return (
     <Button variant="outline" size="sm" className="gap-1.5" asChild>
-      <Link to={user ? '/journal' : '/login'}>
+      <Link to="/journal">
         <BarChart3 className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">
-          {user ? 'Trade Journal' : 'Login ke Trade Journal'}
-        </span>
-        <span className="sm:hidden">
-          {user ? 'Journal' : 'Login'}
-        </span>
+        <span className="hidden sm:inline">Trade Journal</span>
+        <span className="sm:hidden">Journal</span>
       </Link>
     </Button>
+  );
+}
+
+// Identitas user + logout.
+function UserMenu() {
+  const { user, signOut } = useAuth();
+  return (
+    <div className="flex items-center gap-2">
+      <span className="hidden sm:inline text-xs text-muted-foreground max-w-[140px] truncate">
+        {displayName(user?.email)}
+      </span>
+      <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => signOut()}>
+        <LogOut className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">Keluar</span>
+      </Button>
+    </div>
   );
 }
 
@@ -156,6 +171,7 @@ function NocInner() {
         <div className="flex items-center gap-2 flex-shrink-0">
           <TradeJournalButton />
           <ResetDataButton />
+          <UserMenu />
         </div>
       </div>
 

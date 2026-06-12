@@ -1,0 +1,10 @@
+-- PLACEHOLDER — selaras history migration.
+--
+-- Migration versi 20260605000000 sudah ter-apply langsung di database remote
+-- (kemungkinan dari mesin lain saat pengerjaan UBIQU DIRUMA) tetapi filenya tidak
+-- ikut ter-commit ke repo. File kosong ini ada agar `supabase db push` tidak
+-- terblok oleh ketidakcocokan history ("remote migration versions not found in
+-- local migrations directory").
+--
+-- File ini TIDAK dijalankan ke remote (versi tsb sudah tercatat applied). Jangan
+-- menambah DDL di sini. Bila perlu perubahan schema, buat migration baru.
