@@ -117,6 +117,45 @@ async function sendTelegramChunks(
   }
 }
 
+// ─── Capture auth (headless) ─────────────────────────────────────────────────
+// /noc/* wajib login. Puppeteer tak punya sesi interaktif, jadi kita mint
+// magiclink token (single-use, short-lived) untuk akun "capture bot" dan
+// menempelkannya ke URL sebagai #cap_otp=. Halaman capture mengonsumsinya.
+
+const CAPTURE_BOT_EMAIL = 'capturebot@noc.tradeirvan.local';
+
+async function ensureCaptureUser() {
+  try {
+    await supabaseAdmin.auth.admin.createUser({
+      email: CAPTURE_BOT_EMAIL,
+      password: `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}A!`,
+      email_confirm: true,
+      app_metadata: { role: 'noc', capture_bot: true },
+    });
+  } catch {
+    /* sudah ada → abaikan */
+  }
+}
+
+// Mengembalikan fragment hash "cap_otp=<token>" untuk ditempel ke URL capture.
+async function captureAuthHash(): Promise<string> {
+  let res = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: CAPTURE_BOT_EMAIL,
+  });
+  if (res.error || !res.data?.properties?.hashed_token) {
+    // user mungkin belum ada (fresh env) → buat lalu ulang sekali
+    await ensureCaptureUser();
+    res = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: CAPTURE_BOT_EMAIL,
+    });
+  }
+  const token = res.data?.properties?.hashed_token;
+  if (!token) throw new Error('gagal mint capture session');
+  return `cap_otp=${encodeURIComponent(token)}`;
+}
+
 // ─── Screenshot helper ────────────────────────────────────────────────────────
 
 async function sendCaptureToTelegram(
@@ -140,7 +179,11 @@ async function sendCaptureToTelegram(
 
     const page = await browser.newPage();
     await page.setViewport({ width: 1400, height: 900 });
-    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+
+    // Tempel magiclink token untuk auth headless (sebelum navigasi).
+    const authHash = await captureAuthHash();
+    const navUrl = `${url}${url.includes('#') ? '&' : '#'}${authHash}`;
+    await page.goto(navUrl, { waitUntil: 'networkidle0', timeout: 30000 });
     await page.waitForSelector(waitSelector, { timeout: 20000 });
     await new Promise((r) => setTimeout(r, 1000));
 

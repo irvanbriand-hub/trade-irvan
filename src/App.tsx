@@ -4,10 +4,11 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useLocation } from "react-router-dom";
-import { type ReactNode } from "react";
+import { type ReactNode, useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { canAccessTradingApp, isNocOnlyUser } from "@/lib/noc-auth";
+import { hasCaptureToken, consumeCaptureToken } from "@/lib/noc-capture-auth";
 import Dashboard from "./pages/Dashboard";
 import Journal from "./pages/Journal";
 import Portfolio from "./pages/Portfolio";
@@ -71,11 +72,28 @@ function PublicOnlyRoute({ children }: { children: ReactNode }) {
 }
 
 // Gerbang untuk /noc/* — wajib login (owner atau akun NOC). Belum login → /login?redirect=.
+// Mendukung headless capture (Puppeteer): bila ada `#cap_otp=` di URL, konsumsi
+// magiclink token untuk membangun sesi sebelum memutuskan redirect.
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <Spinner />;
-  if (!user) {
+  const [cap, setCap] = useState<"idle" | "pending" | "ok" | "fail">(
+    hasCaptureToken() ? "pending" : "idle",
+  );
+
+  useEffect(() => {
+    if (cap !== "pending") return;
+    let active = true;
+    consumeCaptureToken().then((ok) => {
+      if (active) setCap(ok ? "ok" : "fail");
+    });
+    return () => {
+      active = false;
+    };
+  }, [cap]);
+
+  if (loading || cap === "pending") return <Spinner />;
+  if (!user && cap !== "ok") {
     const redirect = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?redirect=${redirect}`} replace />;
   }
