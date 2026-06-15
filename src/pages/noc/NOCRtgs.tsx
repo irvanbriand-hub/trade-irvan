@@ -16,7 +16,12 @@ import {
   type RTGSAnnotation,
   type RTGSField,
 } from '@/lib/noc/rtgsQueries';
+import { updateTargetOnlineEdited, resetTargetOnlineEdited } from '@/lib/noc/queries';
 import type { PO, TTRecordDB } from '@/lib/noc/types';
+
+// Field yang bisa diedit di halaman RTGS. 'update_target_online' disimpan ke
+// tt_records (bukan annotation); sisanya ke rtgs_annotations.
+type EditField = RTGSField | 'update_target_online';
 import { RTGSCaptureView } from '@/components/noc/RTGSCaptureView';
 import { useNOC } from '@/lib/noc/hooks/useNOC';
 import { usePOList } from '@/lib/noc/hooks/usePOList';
@@ -318,10 +323,10 @@ interface MobileTicketCardProps {
   isWillBeExternal: boolean;
   isExternal: boolean;
   noteRecap: string;
-  editingCell: { ticketId: string; field: RTGSField } | null;
-  setEditingCell: (cell: { ticketId: string; field: RTGSField } | null) => void;
-  onSave: (ticketId: string, field: RTGSField, value: string) => Promise<void>;
-  onReset: (ticketId: string, field: RTGSField) => Promise<void>;
+  editingCell: { ticketId: string; field: EditField } | null;
+  setEditingCell: (cell: { ticketId: string; field: EditField } | null) => void;
+  onSave: (ticketId: string, field: EditField, value: string) => Promise<void>;
+  onReset: (ticketId: string, field: EditField) => Promise<void>;
 }
 
 function MobileTicketCard({
@@ -347,9 +352,9 @@ function MobileTicketCard({
   const isProblemEdited = annotation?.is_problem_edited ?? false;
   const isActionEdited = annotation?.is_action_edited ?? false;
   const isKendalaEdited = annotation?.is_kendala_edited ?? false;
-  const isPlanTargetEdited = annotation?.is_plan_target_online_edited ?? false;
+  const isUpdateTargetEdited = !!(record.is_manually_edited && record.target_online_edited);
 
-  const isEditingField = (field: RTGSField) =>
+  const isEditingField = (field: EditField) =>
     editingCell?.ticketId === record.ticket_id && editingCell.field === field;
 
   return (
@@ -460,23 +465,23 @@ function MobileTicketCard({
         onReset={() => onReset(record.ticket_id, 'kendala')}
       />
       <MobileEditableField
-        label="Plan Target Online"
-        value={planTarget}
-        isEdited={isPlanTargetEdited}
-        isEditing={isEditingField('plan_target_online')}
+        label="Update Target Online"
+        value={updateTarget}
+        isEdited={isUpdateTargetEdited}
+        isEditing={isEditingField('update_target_online')}
         onEditStart={() =>
-          setEditingCell({ ticketId: record.ticket_id, field: 'plan_target_online' })
+          setEditingCell({ ticketId: record.ticket_id, field: 'update_target_online' })
         }
-        onSave={(v) => onSave(record.ticket_id, 'plan_target_online', v)}
+        onSave={(v) => onSave(record.ticket_id, 'update_target_online', v)}
         onCancel={() => setEditingCell(null)}
-        onReset={() => onReset(record.ticket_id, 'plan_target_online')}
+        onReset={() => onReset(record.ticket_id, 'update_target_online')}
       />
 
       {/* Read-only footer */}
       <div className="px-3 py-2 border-t border-border/60 bg-muted/20 text-[11px] space-y-0.5">
         <div className="flex justify-between gap-2">
-          <span className="text-muted-foreground">Update Target Online</span>
-          <span className="font-medium">{updateTarget}</span>
+          <span className="text-muted-foreground">Plan Target Online (fetch awal)</span>
+          <span className="font-medium">{planTarget || '-'}</span>
         </div>
         <div className="flex justify-between gap-2">
           <span className="text-muted-foreground flex-shrink-0">Note Recap</span>
@@ -504,7 +509,7 @@ export default function NOCRtgs() {
   const [loading, setLoading] = useState(true);
   const [editingCell, setEditingCell] = useState<{
     ticketId: string;
-    field: RTGSField;
+    field: EditField;
   } | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const captureInternalRef = useRef<HTMLDivElement>(null);
@@ -538,8 +543,16 @@ export default function NOCRtgs() {
     return records.find((r) => r.ticket_id === ticketId)?.site_id ?? null;
   }
 
-  async function handleSave(ticketId: string, field: RTGSField, value: string) {
+  async function handleSave(ticketId: string, field: EditField, value: string) {
     try {
+      // "Update Target Online" disimpan ke tt_records (bukan annotation).
+      if (field === 'update_target_online') {
+        await updateTargetOnlineEdited(ticketId, value);
+        await loadData();
+        setEditingCell(null);
+        return;
+      }
+
       const siteId = siteIdForTicket(ticketId);
       if (!siteId) {
         throw new Error(
@@ -558,8 +571,15 @@ export default function NOCRtgs() {
     }
   }
 
-  async function handleReset(ticketId: string, field: RTGSField) {
+  async function handleReset(ticketId: string, field: EditField) {
     try {
+      // Reset "Update Target Online" → kembali ke nilai fetch tiket terkini.
+      if (field === 'update_target_online') {
+        await resetTargetOnlineEdited(ticketId);
+        await loadData();
+        return;
+      }
+
       const siteId = siteIdForTicket(ticketId);
       if (!siteId) {
         throw new Error(
@@ -710,7 +730,8 @@ export default function NOCRtgs() {
         <div>
           💡 Klik kolom <strong>Problem Hasil Analisa</strong>,{' '}
           <strong>Action</strong>, <strong>Kendala</strong>, atau{' '}
-          <strong>Plan Target Online</strong> untuk edit manual.
+          <strong>Update Target Online</strong> untuk edit manual.{' '}
+          <strong>Plan Target Online</strong> = hasil fetch awal (read-only).
         </div>
         <div>
           Row dengan badge{' '}
@@ -825,8 +846,9 @@ export default function NOCRtgs() {
                 const isProblemEdited = annotation?.is_problem_edited ?? false;
                 const isActionEdited = annotation?.is_action_edited ?? false;
                 const isKendalaEdited = annotation?.is_kendala_edited ?? false;
-                const isPlanTargetEdited =
-                  annotation?.is_plan_target_online_edited ?? false;
+                const isUpdateTargetEdited = !!(
+                  record.is_manually_edited && record.target_online_edited
+                );
                 const isProblemEditing =
                   editingCell?.ticketId === record.ticket_id &&
                   editingCell.field === 'problem_analisa';
@@ -836,9 +858,9 @@ export default function NOCRtgs() {
                 const isKendalaEditing =
                   editingCell?.ticketId === record.ticket_id &&
                   editingCell.field === 'kendala';
-                const isPlanTargetEditing =
+                const isUpdateTargetEditing =
                   editingCell?.ticketId === record.ticket_id &&
-                  editingCell.field === 'plan_target_online';
+                  editingCell.field === 'update_target_online';
 
                 const isPreview = isPreviewRow(record);
                 const isExternal = record.down_time >= 10;
@@ -1009,34 +1031,36 @@ export default function NOCRtgs() {
                       tdClassName={middleCellBorders}
                     />
 
-                    <EditableCell
-                      value={getEffectivePlanTargetOnline(annotation, record)}
-                      isEdited={isPlanTargetEdited}
-                      isEditing={isPlanTargetEditing}
-                      onEditStart={() =>
-                        setEditingCell({
-                          ticketId: record.ticket_id,
-                          field: 'plan_target_online',
-                        })
-                      }
-                      onSave={(v) =>
-                        handleSave(record.ticket_id, 'plan_target_online', v)
-                      }
-                      onCancel={() => setEditingCell(null)}
-                      onReset={() =>
-                        handleReset(record.ticket_id, 'plan_target_online')
-                      }
-                      tdClassName={middleCellBorders}
-                    />
-
+                    {/* Plan Target Online = snapshot fetch awal (read-only) */}
                     <td
                       className={cn(
                         'px-2 py-2 text-center align-top',
                         middleCellBorders,
                       )}
                     >
-                      {formatTargetDateInline(pickTargetOnline(record))}
+                      {getEffectivePlanTargetOnline(annotation, record) || '-'}
                     </td>
+
+                    {/* Update Target Online = editable (→ tt_records) */}
+                    <EditableCell
+                      value={formatTargetDateInline(pickTargetOnline(record))}
+                      isEdited={isUpdateTargetEdited}
+                      isEditing={isUpdateTargetEditing}
+                      onEditStart={() =>
+                        setEditingCell({
+                          ticketId: record.ticket_id,
+                          field: 'update_target_online',
+                        })
+                      }
+                      onSave={(v) =>
+                        handleSave(record.ticket_id, 'update_target_online', v)
+                      }
+                      onCancel={() => setEditingCell(null)}
+                      onReset={() =>
+                        handleReset(record.ticket_id, 'update_target_online')
+                      }
+                      tdClassName={middleCellBorders}
+                    />
 
                     <td
                       className={cn(

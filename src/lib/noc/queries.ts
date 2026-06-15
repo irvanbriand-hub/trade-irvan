@@ -396,6 +396,46 @@ export async function updateTTRecordEdit(payload: {
 }
 
 /**
+ * Update HANYA target_online_edited (kolom "Update Target Online" di RTGS).
+ * Set is_manually_edited = true supaya nilai persist & dilindungi saat sync TT
+ * (lihat toUpdatePartial di mergeTSVToSupabase). reschedule_note TIDAK disentuh.
+ */
+export async function updateTargetOnlineEdited(
+  ticketId: string,
+  value: string,
+): Promise<void> {
+  // @ts-ignore — tt_records belum ada di generated Database types
+  const { error } = await supabase
+    .from('tt_records')
+    .update({
+      target_online_edited: value || null,
+      is_manually_edited: true,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('ticket_id', ticketId);
+
+  if (error) throw error;
+}
+
+/**
+ * Reset HANYA target_online_edited (kolom "Update Target Online" di RTGS) →
+ * display kembali ke target_online_original (fetch terkini). is_manually_edited
+ * & reschedule_note SENGAJA dibiarkan agar catatan reschedule tidak ikut hilang.
+ */
+export async function resetTargetOnlineEdited(ticketId: string): Promise<void> {
+  // @ts-ignore — tt_records belum ada di generated Database types
+  const { error } = await supabase
+    .from('tt_records')
+    .update({
+      target_online_edited: null,
+      last_updated: new Date().toISOString(),
+    })
+    .eq('ticket_id', ticketId);
+
+  if (error) throw error;
+}
+
+/**
  * Normalisasi format tanggal ke DD/MM/YYYY.
  * Handle: "8/4/26", "08/04/26", "08/04/2026", "2026-04-08"
  */
