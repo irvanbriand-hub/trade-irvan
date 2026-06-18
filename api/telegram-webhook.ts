@@ -986,7 +986,14 @@ async function syncFromGoogleSheet(): Promise<{ inserted: number; updated: numbe
   const rows: SheetRow[] = await resp.json();
   if (!rows.length) return { inserted: 0, updated: 0, deleted: 0 };
 
-  const records = rows.map(mapSheetRowToRecord).filter((r) => r.ticket_id);
+  const mapped = rows.map(mapSheetRowToRecord).filter((r) => r.ticket_id);
+  // Dedupe by ticket_id — Google Sheet kadang punya baris TICKET ID ganda.
+  // Tanpa ini upsert { onConflict: 'ticket_id' } gagal dengan:
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time".
+  // Occurrence terakhir menang (baris paling bawah = state terbaru di Sheet).
+  const dedupMap = new Map<string, (typeof mapped)[number]>();
+  for (const r of mapped) dedupMap.set(r.ticket_id, r);
+  const records = Array.from(dedupMap.values());
   if (!records.length) return { inserted: 0, updated: 0, deleted: 0 };
 
   const incomingTicketIds = new Set(records.map((r) => r.ticket_id));

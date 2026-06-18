@@ -76,6 +76,29 @@ export async function mergeTSVToSupabase(
     };
   }
 
+  // Dedupe by ticketId — Google Sheet kadang punya baris dengan TICKET ID ganda.
+  // Tanpa ini, upsert { onConflict: 'ticket_id' } gagal dengan:
+  // "ON CONFLICT DO UPDATE command cannot affect row a second time".
+  // Occurrence terakhir menang (baris paling bawah = state terbaru di Sheet).
+  const dedupMap = new Map<string, TTRecord>();
+  for (const r of records) {
+    if (!r.ticketId) continue; // baris tanpa TICKET ID tidak bisa di-key
+    dedupMap.set(r.ticketId, r);
+  }
+  records = Array.from(dedupMap.values());
+  if (records.length === 0) {
+    return {
+      inserted: 0,
+      updated: 0,
+      updatedFull: 0,
+      updatedProtected: 0,
+      statusChanged: 0,
+      unchanged: 0,
+      deleted: 0,
+      totalInDB: 0,
+    };
+  }
+
   const incomingTicketIds = new Set(records.map((r) => r.ticketId));
 
   // Fetch SEMUA ticket di DB — perlu untuk tahu mana yang harus di-delete

@@ -95,21 +95,43 @@ export function TsvUploader() {
     setSyncError('');
     setIsSyncing(true);
     try {
-      const url = import.meta.env.VITE_NOC_SHEETS_URL as string | undefined;
-      const res = await fetch(url ?? '');
-      if (!res.ok) throw new Error('network');
-      const json: unknown = await res.json();
+      const url = (import.meta.env.VITE_NOC_SHEETS_URL as string | undefined)?.trim();
+      if (!url) {
+        setSyncError('VITE_NOC_SHEETS_URL belum dikonfigurasi (cek env di Vercel / .env).');
+        return;
+      }
+
+      // 1) Ambil data dari Google Sheet
+      let json: unknown;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          setSyncError(`Google Sheet membalas HTTP ${res.status}. Cek URL Apps Script (kemungkinan deployment lama/expired).`);
+          return;
+        }
+        json = await res.json();
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          setSyncError('Respon Google Sheet bukan JSON valid (kemungkinan URL salah / halaman login Google).');
+        } else {
+          const msg = e instanceof Error ? e.message : String(e);
+          setSyncError(`Gagal terhubung ke Google Sheet: ${msg}`);
+        }
+        return;
+      }
+
       if (!Array.isArray(json) || json.length === 0) {
         setSyncError('Tidak ada data dari Google Sheet.');
         return;
       }
-      const records = mapSheetJSON(json as Record<string, string>[], poList);
-      await loadFromRecords(records, date);
-    } catch (e) {
-      if (e instanceof SyntaxError) {
-        setSyncError('Format data tidak valid.');
-      } else {
-        setSyncError('Gagal terhubung ke Google Sheet.');
+
+      // 2) Simpan ke Supabase
+      try {
+        const records = mapSheetJSON(json as Record<string, string>[], poList);
+        await loadFromRecords(records, date);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setSyncError(`Data Sheet OK, tapi gagal menyimpan ke database: ${msg}`);
       }
     } finally {
       setIsSyncing(false);
