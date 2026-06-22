@@ -23,7 +23,7 @@ interface RTGSCaptureViewProps {
    * Varian tampilan:
    * - 'internal' (default): semua kolom tampil, header "umur 7 hari atau lebih".
    * - 'external': kolom Action, Plan Target Online, Update Target Online disembunyikan,
-   *   header "umur 10 hari atau lebih". Records tetap di-filter di parent.
+   *   header "Umur diatas 10". Records tetap di-filter di parent.
    */
   variant?: RTGSCaptureVariant;
 }
@@ -104,7 +104,7 @@ export function RTGSCaptureView({
   );
 
   const isExternal = variant === 'external';
-  const ageThreshold = isExternal ? 10 : 7;
+  const ageThreshold = isExternal ? 11 : 7;
 
   return (
     <div
@@ -128,14 +128,17 @@ export function RTGSCaptureView({
           borderBottom: 'none',
         }}
       >
-        Tiket RTGS Mahaga yang umur nya {ageThreshold} hari atau lebih, update :
-        tgl {dateLabel}, Jam {timeLabel}
+        {isExternal
+          ? `Tiket RTGS Mahaga yang Umur diatas 10, update : tgl ${dateLabel}, Jam ${timeLabel}`
+          : `Tiket RTGS Mahaga yang umur nya ${ageThreshold} hari atau lebih, update : tgl ${dateLabel}, Jam ${timeLabel}`}
       </div>
 
       {/* Tabel */}
       {records.length === 0 ? (
         <div style={{ padding: '32px', textAlign: 'center', fontSize: '13px' }}>
-          Tidak ada TT dengan aging ≥ {ageThreshold} hari.
+          {isExternal
+            ? 'Tidak ada TT dengan umur diatas 10 hari.'
+            : `Tidak ada TT dengan aging ≥ ${ageThreshold} hari.`}
         </div>
       ) : (
         <table

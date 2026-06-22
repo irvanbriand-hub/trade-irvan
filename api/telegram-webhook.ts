@@ -1855,7 +1855,7 @@ async function processCommand(text: string, chatId: string) {
         waitSelector: '#rtgs-capture-ready',
       });
 
-      // Image 2: External — 7 kolom (Action / Plan Target Online / Update Target Online disembunyikan), umur ≥ 10 hari
+      // Image 2: External — 7 kolom (Action / Plan Target Online / Update Target Online disembunyikan), umur > 10 hari (≥ 11)
       await sendCaptureToTelegram(
         chatId,
         `${APP_URL}/noc/rtgs-capture?variant=external`,

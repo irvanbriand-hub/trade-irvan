@@ -398,7 +398,7 @@ function MobileTicketCard({
               {isWillBeExternal && (
                 <span
                   className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-600 dark:text-orange-400 font-semibold whitespace-nowrap"
-                  title="Besok aging naik ke ≥ 10 → masuk report External"
+                  title="Besok aging naik ke > 10 → masuk report External"
                 >
                   H-1 Ext
                 </span>
@@ -406,7 +406,7 @@ function MobileTicketCard({
               {isExternal && (
                 <span
                   className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-medium whitespace-nowrap"
-                  title="Akan masuk report External (umur ≥ 10 hari)"
+                  title="Akan masuk report External (umur diatas 10 hari)"
                 >
                   Ext
                 </span>
@@ -669,17 +669,17 @@ export default function NOCRtgs() {
 
   const isPreviewRow = (r: TTRecordDB) => r.down_time < 7;
   const internalRecords = records.filter((r) => r.down_time >= 7);
-  const externalRecords = records.filter((r) => r.down_time >= 10);
+  const externalRecords = records.filter((r) => r.down_time >= 11);
   const captureCount = internalRecords.length;
   const externalCount = externalRecords.length;
   const previewCount = records.filter((r) => isPreviewRow(r)).length;
 
-  // Indeks first/last row dalam tabel yang masuk report External (down_time ≥ 10).
+  // Indeks first/last row dalam tabel yang masuk report External (down_time > 10).
   // Karena records disort by down_time DESC, blok external selalu kontigu di atas.
-  const firstExternalIdx = records.findIndex((r) => r.down_time >= 10);
+  const firstExternalIdx = records.findIndex((r) => r.down_time >= 11);
   let lastExternalIdx = -1;
   for (let i = records.length - 1; i >= 0; i--) {
-    if (records[i].down_time >= 10) {
+    if (records[i].down_time >= 11) {
       lastExternalIdx = i;
       break;
     }
@@ -743,8 +743,8 @@ export default function NOCRtgs() {
           Row tint{' '}
           <strong className="text-orange-600 dark:text-orange-400">orange</strong>{' '}
           (badge <strong className="text-orange-600 dark:text-orange-400">H-1 Ext</strong>,
-          aging 9) belum masuk External, tapi <strong>besok</strong> akan naik
-          ke aging ≥ 10 → siap-siap di-prep.
+          aging 10) belum masuk External, tapi <strong>besok</strong> akan naik
+          ke aging &gt; 10 → siap-siap di-prep.
         </div>
         <div>
           Row di dalam{' '}
@@ -752,7 +752,7 @@ export default function NOCRtgs() {
             border hijau
           </strong>{' '}
           (badge <strong className="text-emerald-600 dark:text-emerald-400">Ext</strong>,
-          aging ≥ 10) masuk report <strong>External</strong> — kolom Action,
+          aging &gt; 10) masuk report <strong>External</strong> — kolom Action,
           Plan Target Online, dan Update Target Online disembunyikan di image
           External-nya.
         </div>
@@ -785,8 +785,8 @@ export default function NOCRtgs() {
                   ? annotationRaw
                   : null;
               const isPreview = isPreviewRow(record);
-              const isExternal = record.down_time >= 10;
-              const isWillBeExternal = record.down_time === 9;
+              const isExternal = record.down_time >= 11;
+              const isWillBeExternal = record.down_time === 10;
               const noteRecap = record.site_id
                 ? (getSiteNote(record.site_id)?.note?.trim() ?? '')
                 : '';
@@ -863,8 +863,8 @@ export default function NOCRtgs() {
                   editingCell.field === 'update_target_online';
 
                 const isPreview = isPreviewRow(record);
-                const isExternal = record.down_time >= 10;
-                const isWillBeExternal = record.down_time === 9;
+                const isExternal = record.down_time >= 11;
+                const isWillBeExternal = record.down_time === 10;
                 const isFirstExternal = idx === firstExternalIdx;
                 const isLastExternal = idx === lastExternalIdx;
 
@@ -929,7 +929,7 @@ export default function NOCRtgs() {
                                        bg-orange-500/20 text-orange-600
                                        dark:text-orange-400
                                        font-semibold whitespace-nowrap"
-                            title="Besok aging naik ke ≥ 10 → masuk report External"
+                            title="Besok aging naik ke > 10 → masuk report External"
                           >
                             H-1 Ext
                           </span>
@@ -940,7 +940,7 @@ export default function NOCRtgs() {
                                        bg-emerald-500/15 text-emerald-600
                                        dark:text-emerald-400
                                        font-medium whitespace-nowrap"
-                            title="Akan masuk report External (umur ≥ 10 hari)"
+                            title="Akan masuk report External (umur diatas 10 hari)"
                           >
                             Ext
                           </span>

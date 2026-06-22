@@ -39,7 +39,7 @@ export default function NOCRtgsCapture() {
   const [searchParams] = useSearchParams();
   const variant: RTGSCaptureVariant =
     searchParams.get('variant') === 'external' ? 'external' : 'internal';
-  const minAging = variant === 'external' ? 10 : 7;
+  const minAging = variant === 'external' ? 11 : 7;
 
   const { data: poList = [] } = usePOList();
   const [ready, setReady] = useState(false);
