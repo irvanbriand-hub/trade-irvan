@@ -12,6 +12,7 @@ const db = supabase as any;
 
 const FIELD_COL: Record<UbiquField, { value: string; flag: string }> = {
   po: { value: 'po_name_edited', flag: 'is_po_edited' },
+  progress: { value: 'progress_edited', flag: 'is_progress_edited' },
   kendala: { value: 'kendala_edited', flag: 'is_kendala_edited' },
   mrq_number: { value: 'mrq_number_edited', flag: 'is_mrq_number_edited' },
   resi: { value: 'resi_edited', flag: 'is_resi_edited' },
@@ -277,6 +278,13 @@ export function findEdit(
 export function effPO(row: DatasetRow, edit: UbiquEdit | null): string {
   if (edit?.is_po_edited && edit.po_name_edited) return edit.po_name_edited;
   return row.po_name;
+}
+
+export function effProgress(edit: UbiquEdit | null): string {
+  if (edit?.is_progress_edited && edit.progress_edited) {
+    return edit.progress_edited;
+  }
+  return '';
 }
 
 export function effKendala(edit: UbiquEdit | null): string {

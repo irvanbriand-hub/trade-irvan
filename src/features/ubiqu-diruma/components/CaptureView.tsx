@@ -4,6 +4,7 @@ import { nonHtbCaptureTitle } from '../lib/types';
 import {
   findEdit,
   effPO,
+  effProgress,
   effKendala,
   effMrqNumber,
   effResi,
@@ -16,6 +17,8 @@ interface CaptureViewProps {
   edits: UbiquEdit[];
   dateLabel: string; // 'DD/MM/YYYY'
   timeLabel: string; // 'HH:mm'
+  /** Sertakan kolom spare (MRQ/RESI/ETA/Status Pengiriman) di capture. Default: false. */
+  includeSpare?: boolean;
 }
 
 const thStyle: React.CSSProperties = {
@@ -49,6 +52,7 @@ export function UbiquCaptureView({
   edits,
   dateLabel,
   timeLabel,
+  includeSpare = false,
 }: CaptureViewProps) {
   return (
     <div
@@ -95,11 +99,16 @@ export function UbiquCaptureView({
             <col style={{ width: '55px' }} /> {/* Umur */}
             <col style={{ width: '150px' }} /> {/* Trouble Category */}
             <col style={{ width: '120px' }} /> {/* PO */}
-            <col style={{ width: 'auto' }} /> {/* Kendala */}
-            <col style={{ width: '130px' }} /> {/* MRQ Number */}
-            <col style={{ width: '120px' }} /> {/* RESI */}
-            <col style={{ width: '120px' }} /> {/* ETA */}
-            <col style={{ width: '100px' }} /> {/* Status Pengiriman */}
+            <col style={{ width: 'auto' }} /> {/* Progress */}
+            <col style={{ width: 'auto' }} /> {/* Problem */}
+            {includeSpare && (
+              <>
+                <col style={{ width: '130px' }} /> {/* MRQ Number */}
+                <col style={{ width: '120px' }} /> {/* RESI */}
+                <col style={{ width: '120px' }} /> {/* ETA */}
+                <col style={{ width: '100px' }} /> {/* Status Pengiriman */}
+              </>
+            )}
           </colgroup>
           <thead>
             <tr>
@@ -117,11 +126,16 @@ export function UbiquCaptureView({
               </th>
               <th style={thStyle}>Trouble Category (Info CBOSS)</th>
               <th style={thStyle}>PO</th>
-              <th style={thStyle}>Kendala</th>
-              <th style={thStyle}>MRQ NUMBER</th>
-              <th style={thStyle}>RESI</th>
-              <th style={thStyle}>ETA</th>
-              <th style={thStyle}>STATUS PENGIRIMAN</th>
+              <th style={thStyle}>Progress</th>
+              <th style={thStyle}>Problem</th>
+              {includeSpare && (
+                <>
+                  <th style={thStyle}>MRQ NUMBER</th>
+                  <th style={thStyle}>RESI</th>
+                  <th style={thStyle}>ETA</th>
+                  <th style={thStyle}>STATUS PENGIRIMAN</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -144,13 +158,18 @@ export function UbiquCaptureView({
                   </td>
                   <td style={tdBase}>{dash(row.trouble_category)}</td>
                   <td style={tdBase}>{dash(effPO(row, edit))}</td>
+                  <td style={tdBase}>{dash(effProgress(edit))}</td>
                   <td style={tdBase}>{dash(effKendala(edit))}</td>
-                  <td style={tdBase}>{dash(effMrqNumber(edit))}</td>
-                  <td style={tdBase}>{dash(effResi(edit))}</td>
-                  <td style={tdBase}>{dash(effEta(edit))}</td>
-                  <td style={{ ...tdBase, textAlign: 'center' }}>
-                    {dash(effStatusPengiriman(edit))}
-                  </td>
+                  {includeSpare && (
+                    <>
+                      <td style={tdBase}>{dash(effMrqNumber(edit))}</td>
+                      <td style={tdBase}>{dash(effResi(edit))}</td>
+                      <td style={tdBase}>{dash(effEta(edit))}</td>
+                      <td style={{ ...tdBase, textAlign: 'center' }}>
+                        {dash(effStatusPengiriman(edit))}
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}

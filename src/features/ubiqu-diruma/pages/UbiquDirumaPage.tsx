@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
@@ -81,6 +82,8 @@ export default function UbiquDirumaPage() {
   const [busy, setBusy] = useState<null | string>(null);
   const [unmapped, setUnmapped] = useState(0);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+  // Sertakan kolom spare (MRQ/RESI/ETA/Status Pengiriman) di capture PNG.
+  const [includeSpareCapture, setIncludeSpareCapture] = useState(false);
 
   const ticketInputRef = useRef<HTMLInputElement>(null);
   const datasheetInputRef = useRef<HTMLInputElement>(null);
@@ -541,19 +544,30 @@ export default function UbiquDirumaPage() {
           <TabsContent value="nonhtb" className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                Isi Kendala/MRQ/RESI/ETA/Status langsung di tabel. Tersimpan & nempel
-                ke tiket (kunci No Tiket). Top {CAPTURE_TOP_N} teratas masuk capture.
+                Isi Progress/Problem/MRQ/RESI/ETA/Status langsung di tabel. Tersimpan
+                & nempel ke tiket (kunci No Tiket). Top {CAPTURE_TOP_N} teratas masuk
+                capture.
               </p>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="gap-1.5"
-                disabled={busy !== null || topNonHtb.length === 0}
-                onClick={handleCapture}
-              >
-                <Camera className="h-3.5 w-3.5" />
-                {busy === 'capture' ? 'Capturing...' : 'Capture PNG'}
-              </Button>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                  <Checkbox
+                    checked={includeSpareCapture}
+                    onCheckedChange={(v) => setIncludeSpareCapture(v === true)}
+                    disabled={busy !== null}
+                  />
+                  Sertakan kolom spare (MRQ/RESI/ETA/Status)
+                </label>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="gap-1.5"
+                  disabled={busy !== null || topNonHtb.length === 0}
+                  onClick={handleCapture}
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  {busy === 'capture' ? 'Capturing...' : 'Capture PNG'}
+                </Button>
+              </div>
             </div>
             {nonHtbRows.length === 0 ? (
               <div className="bg-muted/30 border border-dashed border-border rounded-lg p-8 text-center">
@@ -639,6 +653,7 @@ export default function UbiquDirumaPage() {
           edits={edits}
           dateLabel={fmtDate(now)}
           timeLabel={fmtTime(now)}
+          includeSpare={includeSpareCapture}
         />
       </div>
     </div>

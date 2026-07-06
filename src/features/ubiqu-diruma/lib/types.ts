@@ -47,13 +47,15 @@ export interface DatasetRow {
 
 /**
  * Override sel manual (1 row per ticket_id).
- * NON-HTB (diisi di web): po, kendala, mrq_number, resi, eta, status_pengiriman.
+ * NON-HTB (diisi di web): po, progress, kendala (label UI: "Problem"),
+ *   mrq_number, resi, eta, status_pengiriman.
  * HTB (diisi via Excel roundtrip, satu-satunya yang persist lintas hari): progress_teknisi.
  */
 export interface UbiquEdit {
   id: string;
   ticket_id: string;
   po_name_edited: string | null;
+  progress_edited: string | null;
   kendala_edited: string | null;
   mrq_number_edited: string | null;
   resi_edited: string | null;
@@ -61,6 +63,7 @@ export interface UbiquEdit {
   status_pengiriman_edited: string | null;
   progress_teknisi_edited: string | null;
   is_po_edited: boolean;
+  is_progress_edited: boolean;
   is_kendala_edited: boolean;
   is_mrq_number_edited: boolean;
   is_resi_edited: boolean;
@@ -73,6 +76,7 @@ export interface UbiquEdit {
 
 export type UbiquField =
   | 'po'
+  | 'progress'
   | 'kendala'
   | 'mrq_number'
   | 'resi'

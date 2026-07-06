@@ -6,6 +6,7 @@ import { CAPTURE_TOP_N } from '../lib/types';
 import {
   findEdit,
   effPO,
+  effProgress,
   effKendala,
   effMrqNumber,
   effResi,
@@ -155,11 +156,18 @@ export function MobileCards({
             placeholder: '(isi PO)',
           },
           {
-            label: 'Kendala',
+            label: 'Progress',
+            field: 'progress',
+            value: effProgress(edit),
+            isEdited: edit?.is_progress_edited ?? false,
+            placeholder: '(isi progress)',
+          },
+          {
+            label: 'Problem',
             field: 'kendala',
             value: effKendala(edit),
             isEdited: edit?.is_kendala_edited ?? false,
-            placeholder: '(isi kendala)',
+            placeholder: '(isi problem)',
           },
           {
             label: 'MRQ Number',
