@@ -544,9 +544,9 @@ export default function UbiquDirumaPage() {
           <TabsContent value="nonhtb" className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted-foreground">
-                Isi Progress/Problem/MRQ/RESI/ETA/Status langsung di tabel. Tersimpan
+                Isi Problem/Progress/MRQ/RESI/ETA/Status langsung di tabel. Tersimpan
                 & nempel ke tiket (kunci No Tiket). Top {CAPTURE_TOP_N} teratas masuk
-                capture.
+                capture (kolom PO tidak ikut ter-capture).
               </p>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">

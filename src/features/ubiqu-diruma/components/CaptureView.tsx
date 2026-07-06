@@ -3,7 +3,6 @@ import type { DatasetRow, UbiquEdit } from '../lib/types';
 import { nonHtbCaptureTitle } from '../lib/types';
 import {
   findEdit,
-  effPO,
   effProgress,
   effKendala,
   effMrqNumber,
@@ -98,9 +97,8 @@ export function UbiquCaptureView({
             <col style={{ width: '130px' }} /> {/* Provinsi */}
             <col style={{ width: '55px' }} /> {/* Umur */}
             <col style={{ width: '150px' }} /> {/* Trouble Category */}
-            <col style={{ width: '120px' }} /> {/* PO */}
-            <col style={{ width: 'auto' }} /> {/* Progress */}
             <col style={{ width: 'auto' }} /> {/* Problem */}
+            <col style={{ width: 'auto' }} /> {/* Progress */}
             {includeSpare && (
               <>
                 <col style={{ width: '130px' }} /> {/* MRQ Number */}
@@ -125,9 +123,8 @@ export function UbiquCaptureView({
                 (Hari)
               </th>
               <th style={thStyle}>Trouble Category (Info CBOSS)</th>
-              <th style={thStyle}>PO</th>
-              <th style={thStyle}>Progress</th>
               <th style={thStyle}>Problem</th>
+              <th style={thStyle}>Progress</th>
               {includeSpare && (
                 <>
                   <th style={thStyle}>MRQ NUMBER</th>
@@ -157,9 +154,8 @@ export function UbiquCaptureView({
                     {row.dur_days}
                   </td>
                   <td style={tdBase}>{dash(row.trouble_category)}</td>
-                  <td style={tdBase}>{dash(effPO(row, edit))}</td>
-                  <td style={tdBase}>{dash(effProgress(edit))}</td>
                   <td style={tdBase}>{dash(effKendala(edit))}</td>
+                  <td style={tdBase}>{dash(effProgress(edit))}</td>
                   {includeSpare && (
                     <>
                       <td style={tdBase}>{dash(effMrqNumber(edit))}</td>

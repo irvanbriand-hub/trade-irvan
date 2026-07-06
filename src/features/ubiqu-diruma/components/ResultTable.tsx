@@ -51,8 +51,8 @@ export function ResultTable({
             <th className="px-2 py-2 w-16 text-center">Umur (hari)</th>
             <th className="px-2 py-2 w-40 text-left">Trouble Category</th>
             <th className="px-2 py-2 w-32 text-left">PO</th>
-            <th className="px-2 py-2 text-left">Progress</th>
             <th className="px-2 py-2 text-left">Problem</th>
+            <th className="px-2 py-2 text-left">Progress</th>
             <th className="px-2 py-2 w-32 text-left">MRQ Number</th>
             <th className="px-2 py-2 w-32 text-left">RESI</th>
             <th className="px-2 py-2 w-36 text-left">ETA</th>
@@ -112,18 +112,6 @@ export function ResultTable({
                   onReset={() => onReset(row.ticket_id, 'po')}
                 />
                 <EditableCell
-                  value={effProgress(edit)}
-                  isEdited={edit?.is_progress_edited ?? false}
-                  isEditing={isEditing(row.ticket_id, 'progress')}
-                  placeholder="(isi progress)"
-                  onEditStart={() =>
-                    setEditingCell({ ticketId: row.ticket_id, field: 'progress' })
-                  }
-                  onSave={(v) => onSave(row.ticket_id, 'progress', v)}
-                  onCancel={() => setEditingCell(null)}
-                  onReset={() => onReset(row.ticket_id, 'progress')}
-                />
-                <EditableCell
                   value={effKendala(edit)}
                   isEdited={edit?.is_kendala_edited ?? false}
                   isEditing={isEditing(row.ticket_id, 'kendala')}
@@ -134,6 +122,18 @@ export function ResultTable({
                   onSave={(v) => onSave(row.ticket_id, 'kendala', v)}
                   onCancel={() => setEditingCell(null)}
                   onReset={() => onReset(row.ticket_id, 'kendala')}
+                />
+                <EditableCell
+                  value={effProgress(edit)}
+                  isEdited={edit?.is_progress_edited ?? false}
+                  isEditing={isEditing(row.ticket_id, 'progress')}
+                  placeholder="(isi progress)"
+                  onEditStart={() =>
+                    setEditingCell({ ticketId: row.ticket_id, field: 'progress' })
+                  }
+                  onSave={(v) => onSave(row.ticket_id, 'progress', v)}
+                  onCancel={() => setEditingCell(null)}
+                  onReset={() => onReset(row.ticket_id, 'progress')}
                 />
                 <EditableCell
                   value={effMrqNumber(edit)}

@@ -156,18 +156,18 @@ export function MobileCards({
             placeholder: '(isi PO)',
           },
           {
-            label: 'Progress',
-            field: 'progress',
-            value: effProgress(edit),
-            isEdited: edit?.is_progress_edited ?? false,
-            placeholder: '(isi progress)',
-          },
-          {
             label: 'Problem',
             field: 'kendala',
             value: effKendala(edit),
             isEdited: edit?.is_kendala_edited ?? false,
             placeholder: '(isi problem)',
+          },
+          {
+            label: 'Progress',
+            field: 'progress',
+            value: effProgress(edit),
+            isEdited: edit?.is_progress_edited ?? false,
+            placeholder: '(isi progress)',
           },
           {
             label: 'MRQ Number',
