@@ -33,6 +33,13 @@ function getArea(provinsi: string | null): 0 | 1 | 2 | 3 {
   return (a === 1 || a === 2 || a === 3 ? a : 0) as 0 | 1 | 2 | 3;
 }
 
+// Timestamp WIB (dd/MM/yyyy HH:mm) untuk header laporan.
+function wibStamp(): string {
+  const d = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} WIB`;
+}
+
 interface RNode {
   id: string;
   label: string;
@@ -257,10 +264,13 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">Peta Tiket Open</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Satu pusat, tiga lensa: <strong>Aging</strong> (kiri) · <strong>Instansi</strong> (kanan) · <strong>Area</strong> (bawah)
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base font-semibold">Pemetaan Tiket Open Aktif</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">Aging · Instansi · Area</p>
+          </div>
+          <span className="text-xs text-muted-foreground whitespace-nowrap mt-0.5">{wibStamp()}</span>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
