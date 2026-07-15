@@ -29,7 +29,7 @@ export default function NocMindmapCapture() {
   }
 
   return (
-    <div id="mindmap-capture-ready" style={{ width: '1160px', padding: '20px', backgroundColor: '#ffffff' }}>
+    <div id="mindmap-capture-ready" style={{ width: '1340px', padding: '20px', backgroundColor: '#ffffff' }}>
       <RadialOpenMindmap data={records} />
     </div>
   );

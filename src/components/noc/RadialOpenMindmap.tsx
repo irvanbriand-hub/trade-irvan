@@ -122,6 +122,20 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
       };
     };
 
+    // Pecah satu set tiket per area (Area 1/2/3 + Tak Terpetakan bila ada).
+    const areaBreakdown = (idPrefix: string, rows: TTRecordDB[]): RNode[] =>
+      ([1, 2, 3, 0] as const)
+        .map((a) => ({ a, sub: rows.filter((r) => getArea(r.provinsi) === a) }))
+        .filter(({ a, sub }) => a !== 0 || sub.length > 0)
+        .map(({ a, sub }) => ({
+          id: `${idPrefix}-a${a}`,
+          label: a === 0 ? 'Tak Terpetakan' : `Area ${a}`,
+          count: sub.length,
+          rows: sub,
+          tone: AREA_TONE[a],
+          desc: a === 0 ? 'Provinsi belum terpetakan ke area' : AREA_NAMES[a],
+        }));
+
     const areas = ([1, 2, 3, 0] as const).filter((a) => a !== 0 || open.some((r) => getArea(r.provinsi) === 0));
 
     return {
@@ -136,8 +150,24 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
           tone: 'orange' as Tone,
           desc: 'Open umur > 7 hari (lewat SLA)',
           children: [
-            { id: 'over-warn', label: '8–10 hari', count: warnRows.length, rows: warnRows, tone: 'amber' as Tone, desc: 'Overdue 8–10 hari' },
-            { id: 'over-crit', label: '> 10 hari', count: critRows.length, rows: critRows, tone: 'red' as Tone, desc: 'Overdue kritis, > 10 hari' },
+            {
+              id: 'over-warn',
+              label: '8–10 hari',
+              count: warnRows.length,
+              rows: warnRows,
+              tone: 'amber' as Tone,
+              desc: 'Overdue 8–10 hari',
+              children: areaBreakdown('over-warn', warnRows),
+            },
+            {
+              id: 'over-crit',
+              label: '> 10 hari',
+              count: critRows.length,
+              rows: critRows,
+              tone: 'red' as Tone,
+              desc: 'Overdue kritis, > 10 hari',
+              children: areaBreakdown('over-crit', critRows),
+            },
           ],
         },
         { id: 'safe', label: 'Non Overdue', count: safeRows.length, rows: safeRows, tone: 'green' as Tone, desc: 'Open umur ≤ 7 hari (masih dalam SLA)' },
@@ -152,10 +182,16 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
 
   const edges = useMemo(() => {
     const es: { from: string; to: string; dir: Dir; tone: Tone }[] = [];
+    const walk = (node: RNode, dir: Dir) => {
+      for (const ch of node.children ?? []) {
+        es.push({ from: node.id, to: ch.id, dir, tone: ch.tone });
+        walk(ch, dir);
+      }
+    };
     const addArm = (arm: RNode[], dir: Dir) => {
       for (const n of arm) {
         es.push({ from: 'center', to: n.id, dir, tone: n.tone });
-        for (const ch of n.children ?? []) es.push({ from: n.id, to: ch.id, dir, tone: ch.tone });
+        walk(n, dir);
       }
     };
     addArm(left, 'left');
@@ -167,12 +203,8 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const refs = useRef<Record<string, HTMLElement | null>>({});
   const [paths, setPaths] = useState<{ d: string; stroke: string }[]>([]);
-  const sig =
-    `${total}|` +
-    [...left, ...right, ...bottom]
-      .flatMap((n) => [n, ...(n.children ?? [])])
-      .map((n) => `${n.id}:${n.count}`)
-      .join(',');
+  const flatAll = (nodes: RNode[]): RNode[] => nodes.flatMap((n) => [n, ...flatAll(n.children ?? [])]);
+  const sig = `${total}|` + flatAll([...left, ...right, ...bottom]).map((n) => `${n.id}:${n.count}`).join(',');
 
   useLayoutEffect(() => {
     const compute = () => {
@@ -261,6 +293,20 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
     </div>
   );
 
+  // Cabang kiri (Aging) — rekursif, mengalir ke kiri (mendukung kedalaman area).
+  const LeftBranch = ({ node, depth }: { node: RNode; depth: number }) => (
+    <div className="flex flex-row-reverse items-center gap-x-8">
+      <Pill n={node} size={depth === 0 ? 'main' : 'child'} />
+      {node.children && node.children.length > 0 && (
+        <div className="flex flex-col items-end gap-3">
+          {node.children.map((ch) => (
+            <LeftBranch key={ch.id} node={ch} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -274,7 +320,7 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
-          <div ref={containerRef} className="relative mx-auto w-full min-w-[900px] max-w-[1080px] px-4 py-6">
+          <div ref={containerRef} className="relative mx-auto w-full min-w-[960px] max-w-[1280px] px-4 py-6">
             <svg className="pointer-events-none absolute inset-0 h-full w-full" fill="none">
               {paths.map((p, i) => (
                 <path key={i} d={p.d} stroke={p.stroke} strokeWidth={2} strokeOpacity={0.55} />
@@ -287,14 +333,7 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
               <div className="justify-self-end">
                 <Lens title="Aging" contentClass="flex flex-col items-end gap-5">
                   {left.map((n) => (
-                    <div key={n.id} className="flex flex-row-reverse items-center gap-x-8">
-                      <Pill n={n} size="main" />
-                      {n.children && (
-                        <div className="flex flex-col items-end gap-3">
-                          {n.children.map((ch) => <Pill key={ch.id} n={ch} size="child" />)}
-                        </div>
-                      )}
-                    </div>
+                    <LeftBranch key={n.id} node={n} depth={0} />
                   ))}
                 </Lens>
               </div>
