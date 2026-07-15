@@ -8,6 +8,7 @@ import { type ReactNode, useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { canAccessTradingApp, isNocOnlyUser } from "@/lib/noc-auth";
+import { TRADING_ENABLED } from "@/lib/feature-flags";
 import { hasCaptureToken, consumeCaptureToken } from "@/lib/noc-capture-auth";
 import Dashboard from "./pages/Dashboard";
 import Journal from "./pages/Journal";
@@ -47,7 +48,9 @@ function Spinner() {
 }
 
 // Landing default sesuai jenis akun.
+// Saat trading dimatikan, semua akun (termasuk owner) landing ke /noc.
 function homeFor(email?: string | null) {
+  if (!TRADING_ENABLED) return "/noc";
   return isNocOnlyUser(email) ? "/noc" : "/dashboard";
 }
 
@@ -106,6 +109,8 @@ function ProtectedApp() {
 
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
+  // Modul trading dimatikan (feature flag) — arahkan semua ke /noc.
+  if (!TRADING_ENABLED) return <Navigate to="/noc" replace />;
   // Akun NOC-only tidak boleh masuk route trading — lempar ke /noc.
   if (!canAccessTradingApp(user.email)) return <Navigate to="/noc" replace />;
 
@@ -143,7 +148,7 @@ function ProtectedApp() {
 }
 
 const App = () => (
-  <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <Toaster />

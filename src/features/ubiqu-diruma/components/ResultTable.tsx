@@ -39,20 +39,20 @@ export function ResultTable({
     editingCell?.ticketId === ticketId && editingCell.field === field;
 
   return (
-    <div className="hidden lg:block border rounded-md overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-yellow-400 text-black">
+    <div className="hidden lg:block border rounded-md overflow-auto max-h-[calc(100vh-15rem)]">
+      <table className="w-full min-w-[1960px] table-fixed text-sm">
+        <thead className="bg-yellow-400 text-black sticky top-0 z-10">
           <tr>
             <th className="px-2 py-2 w-12 text-center">No</th>
             <th className="px-2 py-2 w-44 text-left">No Tiket</th>
             <th className="px-2 py-2 w-24 text-left">Site ID</th>
-            <th className="px-2 py-2 text-left">Nama Lokasi</th>
+            <th className="px-2 py-2 w-44 text-left">Nama Lokasi</th>
             <th className="px-2 py-2 w-32 text-left">Provinsi</th>
             <th className="px-2 py-2 w-16 text-center">Umur (hari)</th>
             <th className="px-2 py-2 w-40 text-left">Trouble Category</th>
             <th className="px-2 py-2 w-32 text-left">PO</th>
-            <th className="px-2 py-2 text-left">Problem</th>
-            <th className="px-2 py-2 text-left">Progress</th>
+            <th className="px-2 py-2 w-64 text-left">Problem</th>
+            <th className="px-2 py-2 w-64 text-left">Progress</th>
             <th className="px-2 py-2 w-32 text-left">MRQ Number</th>
             <th className="px-2 py-2 w-32 text-left">RESI</th>
             <th className="px-2 py-2 w-36 text-left">ETA</th>

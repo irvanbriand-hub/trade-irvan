@@ -60,8 +60,8 @@ function getCloseType(r: TTRecordDB): 'noc' | 'om' | 'om-visit' | null {
 }
 
 function agingColor(days: number): string {
-  if (days >= 30) return 'text-red-400';
-  if (days >= 14) return 'text-amber-400';
+  if (days >= 30) return 'text-red-600 dark:text-red-400';
+  if (days >= 14) return 'text-amber-600 dark:text-amber-400';
   return 'text-muted-foreground';
 }
 
@@ -582,7 +582,7 @@ export default function NocRecap() {
                 }));
                 setSelectedTabDate(newFrom);
               }}
-              className="h-8 rounded-md border border-border bg-muted/40 px-2 text-sm text-foreground [color-scheme:dark]"
+              className="h-8 rounded-md border border-border bg-muted/40 px-2 text-sm text-foreground [color-scheme:light] dark:[color-scheme:dark]"
             />
           </div>
           <span className="text-muted-foreground text-sm">→</span>
@@ -596,7 +596,7 @@ export default function NocRecap() {
                 if (!e.target.value) return;
                 setDateRange((prev) => ({ ...prev, to: fromInputValue(e.target.value) }));
               }}
-              className="h-8 rounded-md border border-border bg-muted/40 px-2 text-sm text-foreground [color-scheme:dark]"
+              className="h-8 rounded-md border border-border bg-muted/40 px-2 text-sm text-foreground [color-scheme:light] dark:[color-scheme:dark]"
             />
           </div>
         </div>
@@ -756,18 +756,18 @@ export default function NocRecap() {
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            <span className={['text-[10px] font-medium', isOtherDate ? 'text-blue-400' : 'text-muted-foreground'].join(' ')}>
+                            <span className={['text-[10px] font-medium', isOtherDate ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'].join(' ')}>
                               {recordDate || '—'}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               {effectiveTarget !== recordDate ? effectiveTarget || '' : ''}
                             </span>
                             {record.status === 'CLOSED' ? (
-                              <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30 text-[9px] px-1 py-0 h-4">
+                              <Badge variant="outline" className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30 text-[9px] px-1 py-0 h-4">
                                 CLOSED
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="bg-red-500/20 text-red-400 border-red-500/30 text-[9px] px-1 py-0 h-4">
+                              <Badge variant="outline" className="bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30 text-[9px] px-1 py-0 h-4">
                                 OPEN
                               </Badge>
                             )}

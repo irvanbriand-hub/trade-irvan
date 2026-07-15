@@ -35,9 +35,9 @@ interface POColumn {
 }
 
 const areaColors: Record<number, string> = {
-  1: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  2: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
-  3: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+  1: 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30',
+  2: 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/30',
+  3: 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30',
 };
 
 function groupByPO(records: TTRecordDB[], poList: PO[]): POColumn[] {
@@ -72,8 +72,8 @@ function groupByPO(records: TTRecordDB[], poList: PO[]): POColumn[] {
 }
 
 function agingColor(days: number): string {
-  if (days >= 30) return 'text-red-400';
-  if (days >= 14) return 'text-amber-400';
+  if (days >= 30) return 'text-red-600 dark:text-red-400';
+  if (days >= 14) return 'text-amber-600 dark:text-amber-400';
   return 'text-muted-foreground';
 }
 
@@ -150,9 +150,9 @@ function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted
   }
 
   const targetColor = isClosed
-    ? 'text-green-400/70'
+    ? 'text-green-600/80 dark:text-green-400/70'
     : isReschedule
-    ? 'text-amber-400'
+    ? 'text-amber-600 dark:text-amber-400'
     : 'text-muted-foreground';
 
   return (
@@ -169,25 +169,25 @@ function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted
         <div className="flex items-start gap-1 min-w-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1 flex-wrap">
-              {isClosed && <span className="text-green-400 font-bold text-[10px] shrink-0">✓</span>}
-              {isReschedule && !isClosed && <span className="text-amber-400 text-[10px] shrink-0">⚠</span>}
+              {isClosed && <span className="text-green-600 dark:text-green-400 font-bold text-[10px] shrink-0">✓</span>}
+              {isReschedule && !isClosed && <span className="text-amber-600 dark:text-amber-400 text-[10px] shrink-0">⚠</span>}
               <span
                 className={[
                   'text-xs break-words',
-                  isClosed ? 'text-green-400' : isReschedule ? 'text-amber-300' : 'text-foreground',
+                  isClosed ? 'text-green-600 dark:text-green-400' : isReschedule ? 'text-amber-700 dark:text-amber-300' : 'text-foreground',
                 ].join(' ')}
               >
                 {record.site_name}
               </span>
               {isVisit && isClosed && (
-                <span className="text-purple-400 text-[10px] font-bold shrink-0">[VISIT]</span>
+                <span className="text-purple-600 dark:text-purple-400 text-[10px] font-bold shrink-0">[VISIT]</span>
               )}
               {record.is_manually_edited && (
                 <span className="text-[9px] text-muted-foreground shrink-0" title="Diedit manual">✏</span>
               )}
             </div>
             {isReschedule && !isClosed && (
-              <p className="text-amber-400/80 text-[10px] mt-0.5 break-words leading-tight">
+              <p className="text-amber-600/80 dark:text-amber-400/80 text-[10px] mt-0.5 break-words leading-tight">
                 {record.reschedule_note}
               </p>
             )}
@@ -204,7 +204,7 @@ function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted
             {record.is_manually_edited && (
               <button
                 onClick={() => resetRecord({ id: record.id, ticket_id: record.ticket_id })}
-                className="p-0.5 rounded hover:bg-destructive/20 text-amber-400 hover:text-amber-300"
+                className="p-0.5 rounded hover:bg-destructive/20 text-amber-600 hover:text-amber-500 dark:text-amber-400 dark:hover:text-amber-300"
                 title="Reset reschedule ke nilai original"
               >
                 <RotateCcw className="h-3 w-3" />
@@ -215,7 +215,7 @@ function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted
               className="p-0.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-foreground"
               title="Tambah/edit keterangan site"
             >
-              <MessageSquare className={`h-3 w-3 ${siteNote ? 'text-sky-400' : ''}`} />
+              <MessageSquare className={`h-3 w-3 ${siteNote ? 'text-sky-600 dark:text-sky-400' : ''}`} />
             </button>
             {siteNote && (
               <button
@@ -287,11 +287,11 @@ function SiteTableRow({ record, highlighted }: { record: TTRecordDB; highlighted
       {/* Status */}
       <td className="px-2 py-1 align-top">
         {isClosed ? (
-          <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px] px-1.5 py-0 h-4 font-medium">
+          <Badge variant="outline" className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/30 text-[10px] px-1.5 py-0 h-4 font-medium">
             CLOSED
           </Badge>
         ) : (
-          <Badge variant="outline" className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px] px-1.5 py-0 h-4 font-medium">
+          <Badge variant="outline" className="bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30 text-[10px] px-1.5 py-0 h-4 font-medium">
             OPEN
           </Badge>
         )}
@@ -360,8 +360,7 @@ function POBlock({ col, highlightedId }: { col: POColumn; highlightedId: string 
                 <tr key={`prov-${prov}`} className="border-b border-border/50">
                   <td
                     colSpan={4}
-                    className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider"
-                    style={{ color: 'hsl(185 80% 60%)', backgroundColor: 'hsl(var(--card) / 0.6)' }}
+                    className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider bg-muted/40 text-cyan-700 dark:text-cyan-400"
                   >
                     {prov}
                   </td>

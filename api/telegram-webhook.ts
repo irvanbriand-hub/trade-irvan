@@ -1632,6 +1632,9 @@ const COMMAND_LIST = `📋 *NOC Bot — Command List*
 *📢 Rekap*
 /rekap-pagi — Rekap harian pagi (summary kemarin + hari ini)
 
+*🗺️ Mindmap*
+/mindmap — Peta Tiket Open (Aging · Instansi · Area)
+
 *📈 S-Curve*
 /scurve — Report lengkap (global + 3 area)
 /scurve 1/2/3 — Per area tertentu
@@ -1772,6 +1775,16 @@ async function processCommand(text: string, chatId: string) {
     case '/rekap-pagi': {
       const text = await generateRekapPagi();
       await sendTelegramMessage(chatId, text);
+      break;
+    }
+
+    case '/mindmap': {
+      await sendTelegramMessage(chatId, '⏳ Generating mindmap TT Open...');
+      await sendCaptureToTelegram(chatId, `${APP_URL}/noc/mindmap-capture`, {
+        filename: 'mindmap-open.png',
+        waitSelector: '#mindmap-capture-ready',
+        caption: '🗺️ Peta Tiket Open — Aging · Instansi · Area',
+      });
       break;
     }
 

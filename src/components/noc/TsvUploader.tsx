@@ -179,14 +179,14 @@ export function TsvUploader() {
       {/* Merge result banner */}
       {mergeResult && (
         <div className="mx-4 mb-3 rounded-md border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm">
-          <p className="font-medium text-green-400 mb-1">✅ Data berhasil diproses</p>
+          <p className="font-medium text-green-700 dark:text-green-400 mb-1">✅ Data berhasil diproses</p>
           <div className="text-muted-foreground space-y-0.5 text-xs">
             <p>Baru diinsert: <span className="font-medium text-foreground">{mergeResult.inserted}</span> TT</p>
             <p>
               Diupdate:{' '}
               <span className="font-medium text-foreground">{mergeResult.updated}</span> TT
               {mergeResult.statusChanged > 0 && (
-                <span className="ml-1 text-yellow-400">({mergeResult.statusChanged} status berubah)</span>
+                <span className="ml-1 text-yellow-600 dark:text-yellow-400">({mergeResult.statusChanged} status berubah)</span>
               )}
             </p>
             {mergeResult.updatedProtected > 0 && (

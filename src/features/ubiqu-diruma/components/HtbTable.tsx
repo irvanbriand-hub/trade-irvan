@@ -33,9 +33,9 @@ export function HtbTable({ rows, edits, overrideIds = [] }: HtbTableProps) {
         Aset (Spare/MRQ/RESI/MOD/MOS) → Upload Excel Terisi untuk simpan Progress
         Teknisi. Kolom Aset diisi di Excel, tidak disimpan di sini.
       </p>
-      <div className="border rounded-md overflow-x-auto">
+      <div className="border rounded-md overflow-auto max-h-[calc(100vh-17rem)]">
         <table className="w-full text-sm">
-          <thead className="bg-yellow-400 text-black">
+          <thead className="bg-yellow-400 text-black sticky top-0 z-10">
             <tr>
               <th className="px-2 py-2 w-12 text-center">No</th>
               <th className="px-2 py-2 w-44 text-left">No Tiket</th>
