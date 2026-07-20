@@ -13,7 +13,7 @@ interface RadialOpenMindmapProps {
   data: TTRecordDB[];
 }
 
-type Tone = 'green' | 'orange' | 'blue' | 'violet' | 'amber' | 'red' | 'slate';
+type Tone = 'green' | 'orange' | 'blue' | 'violet' | 'amber' | 'red' | 'rose' | 'slate';
 type Dir = 'left' | 'right' | 'bottom';
 
 const TONE: Record<Tone, { pill: string; stroke: string }> = {
@@ -23,6 +23,7 @@ const TONE: Record<Tone, { pill: string; stroke: string }> = {
   violet: { pill: 'bg-violet-500/10 border-violet-500/30 text-violet-700 dark:text-violet-400', stroke: 'rgb(139 92 246)' },
   amber: { pill: 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400', stroke: 'rgb(245 158 11)' },
   red: { pill: 'bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400', stroke: 'rgb(239 68 68)' },
+  rose: { pill: 'bg-rose-700/15 border-rose-700/40 text-rose-800 dark:text-rose-300', stroke: 'rgb(190 18 60)' },
   slate: { pill: 'bg-slate-500/10 border-slate-500/30 text-slate-700 dark:text-slate-300', stroke: 'rgb(100 116 139)' },
 };
 
@@ -81,7 +82,8 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
 
     const overdue = open.filter(over);
     const warnRows = overdue.filter((r) => r.down_time <= 10);
-    const critRows = overdue.filter((r) => r.down_time >= 11);
+    const critRows = overdue.filter((r) => r.down_time >= 11 && r.down_time <= 29);
+    const sevRows = overdue.filter((r) => r.down_time >= 30);
     const safeRows = open.filter((r) => !over(r));
 
     const eduRows = open.filter(isEdu);
@@ -161,12 +163,22 @@ export function RadialOpenMindmap({ data }: RadialOpenMindmapProps) {
             },
             {
               id: 'over-crit',
-              label: '> 10 hari',
+              label: '11–29 hari',
               count: critRows.length,
               rows: critRows,
               tone: 'red' as Tone,
-              desc: 'Overdue kritis, > 10 hari',
+              desc: 'Overdue kritis, 11–29 hari',
               children: areaBreakdown('over-crit', critRows),
+            },
+            {
+              id: 'over-sev',
+              label: '≥ 30 hari',
+              count: sevRows.length,
+              rows: sevRows,
+              tone: 'rose' as Tone,
+              desc: 'Overdue sangat kritis, ≥ 30 hari',
+              // Cabang tetap tampil walau 0, tapi breakdown Area cuma dibuat kalau ada isinya.
+              children: sevRows.length > 0 ? areaBreakdown('over-sev', sevRows) : undefined,
             },
           ],
         },
