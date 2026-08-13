@@ -977,11 +977,28 @@ async function updateBaselineActualsServer(): Promise<number> {
   return updates.length;
 }
 
+// Apps Script anonim kadang membalas 404/5xx transien untuk request dari IP
+// datacenter (Vercel) — sembuh sendiri dalam hitungan detik, jadi cukup retry.
+async function fetchSheetWithRetry(url: string, attempts = 3): Promise<Response> {
+  let lastError: Error = new Error('Gagal fetch sheet');
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 1500 * i));
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) return resp;
+      lastError = new Error(`Gagal fetch sheet: ${resp.status}`);
+    } catch (err: any) {
+      lastError = new Error(`Gagal fetch sheet: ${err?.message ?? err}`);
+    }
+    console.warn(`[fetchSheetWithRetry] attempt ${i + 1}/${attempts} gagal: ${lastError.message}`);
+  }
+  throw lastError;
+}
+
 async function syncFromGoogleSheet(): Promise<{ inserted: number; updated: number; deleted: number }> {
   if (!NOC_SHEETS_URL) throw new Error('VITE_NOC_SHEETS_URL tidak dikonfigurasi');
 
-  const resp = await fetch(NOC_SHEETS_URL);
-  if (!resp.ok) throw new Error(`Gagal fetch sheet: ${resp.status}`);
+  const resp = await fetchSheetWithRetry(NOC_SHEETS_URL);
 
   const rows: SheetRow[] = await resp.json();
   if (!rows.length) return { inserted: 0, updated: 0, deleted: 0 };
